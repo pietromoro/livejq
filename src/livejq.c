@@ -12,6 +12,8 @@
 static i32 probe(void);
 static void probe_palette(void);
 static void probe_log(i32 row, const char* fmt, ...);
+static void enter_screen(void);
+static void leave_screen(void);
 static i32 run_identity(const char* path);
 
 int main(int argc, char** argv) {
@@ -30,7 +32,7 @@ static i32 probe(void) {
   wint_t ch;
 
   setlocale(LC_ALL, "");
-  initscr();
+  enter_screen();
   raw();
   noecho();
   keypad(stdscr, TRUE);
@@ -79,8 +81,27 @@ static i32 probe(void) {
     refresh();
   }
 
-  endwin();
+  leave_screen();
   return 0;
+}
+
+/* PDCursesMod's vt port switches screens with ?47, which some terminals
+ * ignore, and on endwin moves the cursor to the bottom row and forces a
+ * block cursor. ?1049 around it saves and restores the cursor and screen. */
+static void enter_screen(void) {
+#ifndef _WIN32
+  fputs("\033[?1049h", stdout);
+  fflush(stdout);
+#endif
+  initscr();
+}
+
+static void leave_screen(void) {
+  endwin();
+#ifndef _WIN32
+  fputs("\033[?1049l\033[0 q", stdout);
+  fflush(stdout);
+#endif
 }
 
 static void probe_palette(void) {
