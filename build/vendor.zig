@@ -64,8 +64,8 @@ pub fn oniguruma(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.
 const jq_dir = "vendor/jq";
 
 const jq_sources: []const []const u8 = &.{
-  "src/builtin.c",   "src/bytecode.c",  "src/compile.c",     "src/execute.c",
-  "src/jv.c",        "src/jv_alloc.c",  "src/jv_aux.c",      "src/jv_dtoa.c",
+  "src/builtin.c",   "src/bytecode.c",  "src/compile.c",
+  "src/jv.c",       "src/jv_alloc.c",  "src/jv_aux.c",      "src/jv_dtoa.c",
   "src/jv_file.c",   "src/jv_parse.c",  "src/jv_print.c",    "src/jv_unicode.c",
   "src/linker.c",    "src/locfile.c",   "src/util.c",        "src/jv_dtoa_tsd.c",
   "src/lexer.c",     "src/parser.c",    "vendor/decNumber/decContext.c",
@@ -134,6 +134,50 @@ fn jqDefines(mod: *std.Build.Module, target: std.Build.ResolvedTarget) void {
   }
 }
 
+const Splice = struct { anchor: []const u8, before: []const u8 = "", after: []const u8 = "" };
+
+// jq_next cannot be interrupted upstream: a flag polled once per opcode halts
+// the running program, so a superseded query stops instead of leaking a thread.
+const cancel_splices: []const Splice = &.{
+  .{ .anchor = "  int halted;\n", .after = "  int *cancel_flag;\n" },
+  .{ .anchor = "  jq->halted = 0;\n  jq->exit_code = jv_invalid();\n", .after = "  jq->cancel_flag = NULL;\n" },
+  .{
+    .anchor = "    uint16_t opcode = *pc;\n    raising = 0;\n",
+    .before =
+    \\    if (jq->cancel_flag && __atomic_load_n(jq->cancel_flag, __ATOMIC_RELAXED)) {
+    \\      jq_halt(jq, jv_invalid(), jv_string("cancelled"));
+    \\      return jv_invalid();
+    \\    }
+    \\
+    ,
+  },
+};
+
+const cancel_setter =
+  \\
+  \\void jq_set_cancel_flag(jq_state *jq, int *flag) {
+  \\  jq->cancel_flag = flag;
+  \\}
+  \\
+;
+
+fn cancellableExecute(b: *std.Build) []const u8 {
+  const path = jq_dir ++ "/src/execute.c";
+  var src: []const u8 = b.build_root.handle.readFileAlloc(b.graph.io, path, b.allocator, .unlimited) catch |err|
+    std.debug.panic("cannot read {s}: {t}", .{ path, err });
+
+  for (cancel_splices) |s| {
+    const at = std.mem.indexOf(u8, src, s.anchor) orelse
+      std.debug.panic("{s}: cancellation anchor not found, recheck the patch for this jq:\n{s}", .{ path, s.anchor });
+    if (std.mem.indexOfPos(u8, src, at + 1, s.anchor) != null)
+      std.debug.panic("{s}: cancellation anchor is not unique:\n{s}", .{ path, s.anchor });
+    src = std.mem.concat(b.allocator, u8, &.{
+      src[0..at], s.before, s.anchor, s.after, src[at + s.anchor.len ..],
+    }) catch @panic("OOM");
+  }
+  return std.mem.concat(b.allocator, u8, &.{ src, cancel_setter }) catch @panic("OOM");
+}
+
 pub fn jq(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, onig: *std.Build.Step.Compile) *std.Build.Step.Compile {
   const embed = b.addExecutable(.{
     .name = "embed",
@@ -150,6 +194,7 @@ pub fn jq(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin
   const builtin_inc = run_embed.addOutputFileArg("builtin.inc");
 
   const generated = b.addWriteFiles();
+  const execute_c = generated.add("src/execute.c", cancellableExecute(b));
   _ = generated.addCopyFile(builtin_inc, "src/builtin.inc");
   _ = generated.add("src/version.h", "#define JQ_VERSION \"" ++ jq_version ++ "\"\n");
   _ = generated.add("src/config_opts.inc", "#define JQ_CONFIG \"livejq\"\n");
@@ -162,6 +207,7 @@ pub fn jq(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin
   mod.linkLibrary(onig);
   jqDefines(mod, target);
   mod.addCSourceFiles(.{ .root = b.path(jq_dir), .files = jq_sources, .flags = vendor_flags });
+  mod.addCSourceFile(.{ .file = execute_c, .flags = vendor_flags });
   if (target.result.os.tag == .windows) mod.linkSystemLibrary("shlwapi", .{});
 
   const lib = b.addLibrary(.{ .name = "jq", .root_module = mod });
