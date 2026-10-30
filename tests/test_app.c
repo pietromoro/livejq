@@ -83,7 +83,7 @@ static const char* line(app* a, i32 y) {
 
 static u8 style_at(app* a, i32 x, i32 y) {
   line(a, y);
-  return grid_at(screen, x, y).style & ~STYLE_SELECTED;
+  return grid_at(screen, x, y).style & ~(STYLE_SELECTED | STYLE_SELECTED_IDLE);
 }
 
 static void test_multi_document(void) {

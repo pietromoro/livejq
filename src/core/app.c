@@ -138,7 +138,7 @@ void app_render(app* a, grid* g) {
   if (a->has_result && n == 0 && jv_get_kind(a->error) == JV_KIND_NULL)
     grid_puts(g, 0, 1, "(no output)", STYLE_EMPTY);
 
-  tree_render(a->tree, g, 1, g->h - 2, a->stale);
+  tree_render(a->tree, g, 1, g->h - 2, a->stale, a->focus == FOCUS_TREE);
   render_status(a, g);
 }
 

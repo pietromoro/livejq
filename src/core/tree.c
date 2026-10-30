@@ -170,7 +170,9 @@ void tree_do(tree* t, tree_op op) {
   remember_cursor(t);
 }
 
-void tree_render(tree* t, grid* g, i32 y, i32 h, b8 dim) {
+void tree_render(tree* t, grid* g, i32 y, i32 h, b8 dim, b8 focused) {
+  u8 selected = focused ? STYLE_SELECTED : STYLE_SELECTED_IDLE;
+
   if (h < 1) return;
 
   t->page = h;
@@ -181,7 +183,7 @@ void tree_render(tree* t, grid* g, i32 y, i32 h, b8 dim) {
 
   for (i32 i = 0; i < h && t->top + i < t->nrows; i++) {
     i32 r = t->top + i;
-    u8 flag = r == t->cursor ? STYLE_SELECTED : 0;
+    u8 flag = r == t->cursor ? selected : 0;
 
     grid_fill(g, y + i, STYLE_NORMAL | flag);
     render_row(t, g, r, y + i, flag, dim);

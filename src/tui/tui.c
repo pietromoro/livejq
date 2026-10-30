@@ -18,6 +18,7 @@ static b8 translate(i32 kind, wint_t ch, u32* key);
 static void blit(const grid* g);
 
 static attr_t style_attrs[STYLE_COUNT];
+static attr_t idle_attrs[STYLE_COUNT]; /* the cursor's line while the tree has no focus */
 static i32 cursor_shown = -1; /* curs_set rewrites the cursor shape on each call */
 
 /* PDCursesMod's vt port switches screens with ?47, which some terminals
@@ -95,7 +96,9 @@ i32 tui_run(const char* path) {
   return 0;
 }
 
-/* jq's palette: gray null, green strings, bold punctuation and keys. */
+/* jq's palette: gray null, green strings, bold punctuation and keys. The
+ * cursor's line without focus gets a dark background, or an underline
+ * with fewer than 16 colors. */
 static void init_colors(void) {
   static const struct {
     u8 style;
@@ -106,7 +109,11 @@ static void init_colors(void) {
       { STYLE_ERROR, COLOR_RED, A_BOLD | A_REVERSE },
       { STYLE_STRING, COLOR_GREEN, 0 },
       { STYLE_KEY, COLOR_BLUE, A_BOLD },
+      { STYLE_NULL, 8, 0 },
   };
+  i16 fg[STYLE_COUNT];
+  i16 pair = 1;
+  i16 idle_bg;
 
   style_attrs[STYLE_DIM] = A_DIM;
   style_attrs[STYLE_EMPTY] = A_DIM;
@@ -114,19 +121,34 @@ static void init_colors(void) {
   style_attrs[STYLE_ERROR] = A_BOLD | A_REVERSE;
   style_attrs[STYLE_PUNCT] = A_BOLD;
   style_attrs[STYLE_NULL] = A_DIM;
+  for (i32 s = 0; s < STYLE_COUNT; s++) {
+    idle_attrs[s] = style_attrs[s] | A_UNDERLINE;
+    fg[s] = -1;
+  }
+
   if (!has_colors()) return;
 
   start_color();
   use_default_colors();
   for (usz i = 0; i < ARRAY_LEN(spec); i++) {
-    init_pair((i16)(i + 1), spec[i].fg, -1);
-    style_attrs[spec[i].style] = spec[i].attrs | COLOR_PAIR(i + 1);
+    if (spec[i].fg >= COLORS) continue;
+
+    init_pair(pair, spec[i].fg, -1);
+    style_attrs[spec[i].style] = spec[i].attrs | COLOR_PAIR(pair);
+    fg[spec[i].style] = spec[i].fg;
+    pair++;
   }
 
   if (COLORS < 16) return;
 
-  init_pair((i16)(ARRAY_LEN(spec) + 1), 8, -1);
-  style_attrs[STYLE_NULL] = COLOR_PAIR(ARRAY_LEN(spec) + 1);
+  idle_bg = COLORS >= 256 ? 236 : 8;
+  for (i32 s = 0; s < STYLE_COUNT; s++) {
+    if (fg[s] == idle_bg) continue;
+
+    init_pair(pair, fg[s], idle_bg);
+    idle_attrs[s] = (style_attrs[s] & ~A_COLOR) | COLOR_PAIR(pair);
+    pair++;
+  }
 }
 
 static b8 translate(i32 kind, wint_t ch, u32* key) {
@@ -180,8 +202,9 @@ static void blit(const grid* g) {
   for (i32 y = 0; y < g->h && y < LINES; y++) {
     for (i32 x = 0; x < g->w && x < COLS; x++) {
       cell c = grid_at(g, x, y);
-      u8 st = c.style & ~STYLE_SELECTED;
-      attr_t at = st < STYLE_COUNT ? style_attrs[st] : 0;
+      u8 st = c.style & ~(STYLE_SELECTED | STYLE_SELECTED_IDLE);
+      const attr_t* attrs = c.style & STYLE_SELECTED_IDLE ? idle_attrs : style_attrs;
+      attr_t at = st < STYLE_COUNT ? attrs[st] : 0;
       wchar_t wc[2];
       cchar_t cc;
 

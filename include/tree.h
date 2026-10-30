@@ -30,7 +30,7 @@ void tree_free(tree* t);
 void tree_set(tree* t, jv outputs);
 void tree_do(tree* t, tree_op op);
 /* Draws the lines into rows y..y+h-1, scrolled to show the cursor. */
-void tree_render(tree* t, grid* g, i32 y, i32 h, b8 dim);
+void tree_render(tree* t, grid* g, i32 y, i32 h, b8 dim, b8 focused);
 /* The cursor's path as jq writes it, "" when there are no lines. */
 void tree_path(tree* t, char* buf, usz cap);
 

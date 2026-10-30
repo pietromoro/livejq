@@ -130,8 +130,10 @@ static void test_focus(void) {
   line(a, 0);
   ASSERT_EQ(screen->cursor_x, 7);
   ASSERT_EQ(screen->cursor_y, 0);
+  ASSERT_EQ(grid_at(screen, W - 1, 1).style, STYLE_NORMAL | STYLE_SELECTED_IDLE);
   press(a, '\t');
   ASSERT_EQ(app_focused(a), FOCUS_TREE);
+  CHECK(selected(a, 1));
   type(a, "jx");
   ASSERT_STREQ(line(a, 0), "QUERY .");
   ASSERT_EQ(screen->cursor_x, -1);
