@@ -1,4 +1,4 @@
-/* tree - the outputs as lines, containers opened by size. */
+/* tree - the outputs as foldable lines, folds kept by path. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,12 +9,23 @@
 #define MARK_OPEN    "\xe2\x96\xbe "
 #define MARK_CLOSED  "\xe2\x96\xb8 "
 
-/* how far containers open, picked from the size of the outputs. */
+/* how far containers open when the path has no fold of its own. */
 typedef enum {
   EXPAND_ALL = 0,
   EXPAND_ROOTS,
   EXPAND_NONE,
 } expand_mode;
+
+typedef struct {
+  char* s;
+  usz len;
+  usz cap;
+} strbuf;
+
+typedef struct {
+  char* key; /* NULL when the slot is free */
+  b8 open;
+} fold;
 
 typedef struct {
   jv value;
@@ -32,6 +43,16 @@ struct tree {
   row* rows;
   i32 nrows;
   i32 rows_cap;
+
+  fold* folds; /* open addressing, keyed by path */
+  usz nfolds;
+  usz folds_cap;
+
+  i32 cursor;
+  i32 top;
+  i32 page;
+
+  strbuf key; /* path of the row being built */
 };
 
 static void rebuild(tree* t);
@@ -40,8 +61,21 @@ static b8 is_open(tree* t, jv value, i32 depth);
 static b8 has_children(jv v);
 static i32 count_rows(jv v, i32 levels, i32 budget);
 static expand_mode pick_mode(tree* t);
-static void render_row(tree* t, grid* g, i32 r, i32 y, b8 dim);
+static void set_subtree(tree* t, jv value, b8 open);
+static void fold_or_leave(tree* t);
+static void fold_row(tree* t, b8 open);
+static void row_key(tree* t, i32 r);
+static void key_segment(strbuf* b, jv key, i32 depth);
+static fold* fold_find(tree* t, const char* key);
+static void fold_set(tree* t, const char* key, b8 open);
+static u32 hash(const char* s);
+static void render_row(tree* t, grid* g, i32 r, i32 y, u8 flag, b8 dim);
+static void path_display(tree* t, i32 r, strbuf* b);
+static b8 is_ident(const char* s);
 static u8 kind_style(jv v);
+static void sb_reserve(strbuf* b, usz more);
+static void sb_add(strbuf* b, const char* s, usz len);
+static void sb_cut(strbuf* b, usz len);
 
 tree* tree_new(void) {
   tree* t = calloc(1, sizeof(*t));
@@ -49,6 +83,7 @@ tree* tree_new(void) {
   if (!t) abort();
 
   t->roots = jv_array();
+  t->page = 1;
   return t;
 }
 
@@ -60,12 +95,18 @@ void tree_free(tree* t) {
     jv_free(t->rows[i].key);
   }
 
+  for (usz i = 0; i < t->folds_cap; i++) free(t->folds[i].key);
+
   jv_free(t->roots);
   free(t->rows);
+  free(t->folds);
+  free(t->key.s);
   free(t);
 }
 
 void tree_set(tree* t, jv outputs) {
+  t->cursor = 0;
+  t->top = 0;
   jv_free(t->roots);
   t->roots = outputs;
   t->nroots = jv_array_length(jv_copy(outputs));
@@ -73,23 +114,112 @@ void tree_set(tree* t, jv outputs) {
   rebuild(t);
 }
 
+void tree_do(tree* t, tree_op op) {
+  i32 last = t->nrows - 1;
+
+  if (t->nrows == 0) return;
+
+  switch (op) {
+    case TREE_UP:
+      t->cursor--;
+      break;
+    case TREE_DOWN:
+      t->cursor++;
+      break;
+    case TREE_PAGE_UP:
+      t->cursor -= t->page;
+      t->top -= t->page;
+      break;
+    case TREE_PAGE_DOWN:
+      t->cursor += t->page;
+      t->top += t->page;
+      break;
+    case TREE_TOP:
+      t->cursor = 0;
+      break;
+    case TREE_BOTTOM:
+      t->cursor = last;
+      break;
+    case TREE_FOLD:
+      fold_or_leave(t);
+      break;
+    case TREE_UNFOLD:
+      if (has_children(t->rows[t->cursor].value)) fold_row(t, 1);
+      break;
+    case TREE_TOGGLE:
+      if (has_children(t->rows[t->cursor].value)) fold_row(t, !t->rows[t->cursor].open);
+      break;
+    case TREE_FOLD_ALL:
+    case TREE_UNFOLD_ALL:
+      row_key(t, t->cursor);
+      set_subtree(t, t->rows[t->cursor].value, op == TREE_UNFOLD_ALL);
+      rebuild(t);
+      break;
+  }
+
+  if (t->cursor < 0) t->cursor = 0;
+  if (t->cursor > t->nrows - 1) t->cursor = t->nrows - 1;
+  if (t->top < 0) t->top = 0;
+}
+
 void tree_render(tree* t, grid* g, i32 y, i32 h, b8 dim) {
-  for (i32 i = 0; i < h && i < t->nrows; i++) render_row(t, g, i, y + i, dim);
+  if (h < 1) return;
+
+  t->page = h;
+  if (t->top > t->nrows - h) t->top = t->nrows - h;
+  if (t->top < 0) t->top = 0;
+  if (t->cursor < t->top) t->top = t->cursor;
+  if (t->cursor >= t->top + h) t->top = t->cursor - h + 1;
+
+  for (i32 i = 0; i < h && t->top + i < t->nrows; i++) {
+    i32 r = t->top + i;
+    u8 flag = r == t->cursor ? STYLE_SELECTED : 0;
+
+    grid_fill(g, y + i, STYLE_NORMAL | flag);
+    render_row(t, g, r, y + i, flag, dim);
+  }
+}
+
+void tree_path(tree* t, char* buf, usz cap) {
+  if (cap == 0) return;
+
+  buf[0] = '\0';
+  if (t->nrows == 0) return;
+
+  strbuf b = { 0 };
+
+  path_display(t, t->cursor, &b);
+  if (t->rows[t->cursor].parent < 0) sb_add(&b, ".", 1);
+
+  snprintf(buf, cap, "%s", b.s);
+  free(b.s);
 }
 
 static void rebuild(tree* t) {
+  char num[24];
+
   for (i32 i = 0; i < t->nrows; i++) {
     jv_free(t->rows[i].value);
     jv_free(t->rows[i].key);
   }
 
   t->nrows = 0;
-  for (i32 i = 0; i < t->nroots; i++)
+  for (i32 i = 0; i < t->nroots; i++) {
+    sb_cut(&t->key, 0);
+    snprintf(num, sizeof(num), "#%d", i);
+    sb_add(&t->key, num, strlen(num));
     add_rows(t, jv_array_get(jv_copy(t->roots), i), jv_number(i), -1, 0);
+  }
+
+  if (t->cursor > t->nrows - 1) t->cursor = t->nrows - 1;
+  if (t->cursor < 0) t->cursor = 0;
 }
 
 static void add_rows(tree* t, jv value, jv key, i32 parent, i32 depth) {
+  usz mark = t->key.len;
   i32 r = t->nrows;
+
+  if (depth > 0) key_segment(&t->key, key, depth);
 
   if (t->nrows == t->rows_cap) {
     t->rows_cap = t->rows_cap ? t->rows_cap * 2 : 64;
@@ -109,10 +239,16 @@ static void add_rows(tree* t, jv value, jv key, i32 parent, i32 depth) {
   } else if (t->rows[r].open) {
     jv_object_foreach(value, k, item) add_rows(t, item, k, r, depth + 1);
   }
+
+  sb_cut(&t->key, mark);
 }
 
 static b8 is_open(tree* t, jv value, i32 depth) {
   if (!has_children(value)) return 0;
+
+  fold* f = fold_find(t, t->key.s);
+
+  if (f->key) return f->open;
 
   return t->mode == EXPAND_ALL || (t->mode == EXPAND_ROOTS && depth == 0);
 }
@@ -171,12 +307,137 @@ static expand_mode pick_mode(tree* t) {
   return roots < EXPAND_LIMIT ? EXPAND_ROOTS : EXPAND_NONE;
 }
 
-static void render_row(tree* t, grid* g, i32 r, i32 y, b8 dim) {
+/* folds or unfolds every container under the path in t->key. */
+static void set_subtree(tree* t, jv value, b8 open) {
+  usz mark = t->key.len;
+
+  if (!has_children(value)) return;
+
+  fold_set(t, t->key.s, open);
+  if (jv_get_kind(value) == JV_KIND_ARRAY) {
+    jv_array_foreach(value, i, item) {
+      key_segment(&t->key, jv_number(i), 1);
+      set_subtree(t, item, open);
+      jv_free(item);
+      sb_cut(&t->key, mark);
+    }
+  } else {
+    jv_object_foreach(value, k, item) {
+      key_segment(&t->key, k, 1);
+      set_subtree(t, item, open);
+      jv_free(k);
+      jv_free(item);
+      sb_cut(&t->key, mark);
+    }
+  }
+}
+
+static void fold_or_leave(tree* t) {
+  if (t->rows[t->cursor].open) fold_row(t, 0);
+  else if (t->rows[t->cursor].parent >= 0) t->cursor = t->rows[t->cursor].parent;
+}
+
+static void fold_row(tree* t, b8 open) {
+  row_key(t, t->cursor);
+  fold_set(t, t->key.s, open);
+  rebuild(t);
+}
+
+/* the path of row r into t->key, in the encoding folds are keyed by. */
+static void row_key(tree* t, i32 r) {
+  char num[24];
+
+  if (t->rows[r].parent >= 0) {
+    row_key(t, t->rows[r].parent);
+    key_segment(&t->key, t->rows[r].key, t->rows[r].depth);
+    return;
+  }
+
+  sb_cut(&t->key, 0);
+  snprintf(num, sizeof(num), "#%d", (i32)jv_number_value(t->rows[r].key));
+  sb_add(&t->key, num, strlen(num));
+}
+
+/* [n] for an index, ."name" for a member: no segment is a prefix of
+ * another, so a path is a prefix of its descendants' paths. */
+static void key_segment(strbuf* b, jv key, i32 depth) {
+  if (depth == 0) return;
+
+  char num[24];
+
+  if (jv_get_kind(key) == JV_KIND_NUMBER) {
+    snprintf(num, sizeof(num), "[%d]", (i32)jv_number_value(key));
+    sb_add(b, num, strlen(num));
+    return;
+  }
+
+  sb_add(b, ".\"", 2);
+  for (const char* s = jv_string_value(key); *s; s++) {
+    if (*s == '"' || *s == '\\') sb_add(b, "\\", 1);
+    sb_add(b, s, 1);
+  }
+
+  sb_add(b, "\"", 1);
+}
+
+static fold* fold_find(tree* t, const char* key) {
+  static fold none;
+  usz i;
+
+  if (t->folds_cap == 0) return &none;
+
+  i = hash(key) & (t->folds_cap - 1);
+  while (t->folds[i].key && strcmp(t->folds[i].key, key) != 0) i = (i + 1) & (t->folds_cap - 1);
+
+  return &t->folds[i];
+}
+
+static void fold_set(tree* t, const char* key, b8 open) {
+  fold* f;
+
+  if ((t->nfolds + 1) * 4 > t->folds_cap * 3) {
+    fold* old = t->folds;
+    usz old_cap = t->folds_cap;
+
+    t->folds_cap = old_cap ? old_cap * 2 : 64;
+    t->folds = calloc(t->folds_cap, sizeof(fold));
+    if (!t->folds) abort();
+
+    for (usz i = 0; i < old_cap; i++) {
+      if (!old[i].key) continue;
+
+      *fold_find(t, old[i].key) = old[i];
+    }
+
+    free(old);
+  }
+
+  f = fold_find(t, key);
+  if (!f->key) {
+    f->key = malloc(strlen(key) + 1);
+    if (!f->key) abort();
+
+    strcpy(f->key, key);
+    t->nfolds++;
+  }
+
+  f->open = open;
+}
+
+static u32 hash(const char* s) {
+  u32 h = 2166136261u;
+
+  while (*s) h = (h ^ (u8)*s++) * 16777619u;
+
+  return h;
+}
+
+static void render_row(tree* t, grid* g, i32 r, i32 y, u8 flag, b8 dim) {
   row* w = &t->rows[r];
   jv_kind kind = jv_get_kind(w->value);
   i32 x = w->depth * 2;
   char buf[32];
-  u8 punct = (dim ? STYLE_DIM : STYLE_PUNCT);
+  u8 punct = (dim ? STYLE_DIM : STYLE_PUNCT) | flag;
   jv text;
 
   if (has_children(w->value)) grid_puts(g, x, y, w->open ? MARK_OPEN : MARK_CLOSED, punct);
@@ -184,11 +445,11 @@ static void render_row(tree* t, grid* g, i32 r, i32 y, b8 dim) {
   x += 2;
   if (w->parent < 0 && t->nroots > 1) {
     snprintf(buf, sizeof(buf), "#%d ", (i32)jv_number_value(w->key));
-    x = grid_put_fit(g, x, y, g->w, buf, strlen(buf), (dim ? STYLE_DIM : STYLE_LABEL));
+    x = grid_put_fit(g, x, y, g->w, buf, strlen(buf), (dim ? STYLE_DIM : STYLE_LABEL) | flag);
   } else if (w->parent >= 0 && jv_get_kind(w->key) == JV_KIND_STRING) {
     const char* k = jv_string_value(w->key);
 
-    x = grid_put_fit(g, x, y, g->w, k, strlen(k), (dim ? STYLE_DIM : STYLE_KEY));
+    x = grid_put_fit(g, x, y, g->w, k, strlen(k), (dim ? STYLE_DIM : STYLE_KEY) | flag);
     x = grid_put_fit(g, x, y, g->w, ": ", 2, punct);
   } else if (w->parent >= 0) {
     snprintf(buf, sizeof(buf), "%d: ", (i32)jv_number_value(w->key));
@@ -215,9 +476,51 @@ static void render_row(tree* t, grid* g, i32 r, i32 y, b8 dim) {
     g->w,
     jv_string_value(text),
     (usz)jv_string_length_bytes(jv_copy(text)),
-    (dim ? STYLE_DIM : kind_style(w->value))
+    (dim ? STYLE_DIM : kind_style(w->value)) | flag
   );
   jv_free(text);
+}
+
+/* the path of row r as jq writes it, after "#n " if there are more roots. */
+static void path_display(tree* t, i32 r, strbuf* b) {
+  row* w = &t->rows[r];
+  char num[24];
+
+  if (w->parent < 0) {
+    sb_cut(b, 0);
+    if (t->nroots < 2) return;
+
+    snprintf(num, sizeof(num), "#%d ", (i32)jv_number_value(w->key));
+    sb_add(b, num, strlen(num));
+    return;
+  }
+
+  path_display(t, w->parent, b);
+  if (jv_get_kind(w->key) == JV_KIND_NUMBER && t->rows[w->parent].parent < 0) sb_add(b, ".", 1);
+
+  if (jv_get_kind(w->key) == JV_KIND_NUMBER) {
+    snprintf(num, sizeof(num), "[%d]", (i32)jv_number_value(w->key));
+    sb_add(b, num, strlen(num));
+  } else if (is_ident(jv_string_value(w->key))) {
+    sb_add(b, ".", 1);
+    sb_add(b, jv_string_value(w->key), strlen(jv_string_value(w->key)));
+  } else {
+    jv text = jv_dump_string(jv_copy(w->key), 0);
+
+    sb_add(b, ".", 1);
+    sb_add(b, jv_string_value(text), strlen(jv_string_value(text)));
+    jv_free(text);
+  }
+}
+
+static b8 is_ident(const char* s) {
+  if (!((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z') || *s == '_')) return 0;
+
+  for (s++; *s; s++)
+    if (!((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z') || (*s >= '0' && *s <= '9') || *s == '_'))
+      return 0;
+
+  return 1;
 }
 
 static u8 kind_style(jv v) {
@@ -231,3 +534,23 @@ static u8 kind_style(jv v) {
   }
 }
 
+static void sb_reserve(strbuf* b, usz more) {
+  if (b->len + more + 1 <= b->cap) return;
+
+  b->cap = (b->len + more + 1) * 2;
+  b->s = realloc(b->s, b->cap);
+  if (!b->s) abort();
+}
+
+static void sb_add(strbuf* b, const char* s, usz len) {
+  sb_reserve(b, len);
+  memcpy(b->s + b->len, s, len);
+  b->len += len;
+  b->s[b->len] = '\0';
+}
+
+static void sb_cut(strbuf* b, usz len) {
+  sb_reserve(b, 0);
+  b->len = len;
+  b->s[len] = '\0';
+}

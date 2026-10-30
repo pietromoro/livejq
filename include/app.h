@@ -10,12 +10,26 @@
 /* keys that are not text sit above the unicode range. */
 enum {
   APP_KEY_BACKSPACE = 0x110000,
+  APP_KEY_BACKTAB,
+  APP_KEY_UP,
+  APP_KEY_DOWN,
+  APP_KEY_LEFT,
+  APP_KEY_RIGHT,
+  APP_KEY_PAGE_UP,
+  APP_KEY_PAGE_DOWN,
+  APP_KEY_HOME,
+  APP_KEY_END,
 };
 
 typedef enum {
   EV_KEY = 0,
   EV_TICK,
 } app_event_kind;
+
+typedef enum {
+  FOCUS_QUERY = 0,
+  FOCUS_TREE,
+} app_focus;
 
 typedef struct {
   app_event_kind kind;
@@ -42,5 +56,6 @@ void app_feed(app* a, app_event ev);
  * result. False if it is still running after timeout_ms. */
 b8 app_settle(app* a, i64 timeout_ms);
 void app_render(app* a, grid* g);
+app_focus app_focused(const app* a);
 
 #endif /* LIVEJQ_APP_H */
