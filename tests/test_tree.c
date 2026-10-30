@@ -137,6 +137,14 @@ static void test_focus(void) {
   ASSERT_EQ(screen->cursor_x, -1);
   press(a, APP_KEY_BACKTAB);
   ASSERT_EQ(app_focused(a), FOCUS_QUERY);
+  press(a, APP_KEY_HOME);
+  type(a, "[");
+  press(a, APP_KEY_END);
+  type(a, "]");
+  ASSERT_STREQ(line(a, 0), "QUERY [.]");
+  ASSERT_EQ(screen->cursor_x, 9);
+  press(a, 'w' & 0x1f);
+  ASSERT_STREQ(line(a, 0), "QUERY");
   app_free(a);
 }
 

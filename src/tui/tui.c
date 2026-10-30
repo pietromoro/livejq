@@ -145,6 +145,15 @@ static b8 translate(i32 kind, wint_t ch, u32* key) {
       { KEY_BTAB, APP_KEY_BACKTAB },
       { KEY_BACKSPACE, APP_KEY_BACKSPACE },
       { KEY_ENTER, APP_KEY_ENTER },
+      { KEY_DC, APP_KEY_DELETE },
+      { CTL_LEFT, APP_KEY_WORD_LEFT },
+      { ALT_LEFT, APP_KEY_WORD_LEFT },
+      { ALT_B, APP_KEY_WORD_LEFT },
+      { CTL_RIGHT, APP_KEY_WORD_RIGHT },
+      { ALT_RIGHT, APP_KEY_WORD_RIGHT },
+      { ALT_F, APP_KEY_WORD_RIGHT },
+      { ALT_BKSP, APP_KEY_WORD_BACKSPACE },
+      { CTL_BKSP, APP_KEY_WORD_BACKSPACE },
   };
 
   if (kind == OK && (ch == '\r' || ch == '\n')) {

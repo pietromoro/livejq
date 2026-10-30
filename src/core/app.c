@@ -11,6 +11,7 @@
 
 #define DEBOUNCE_MS 150
 #define DEFAULT_CAP 10000
+#define CTRL(c)     ((c) & 0x1f)
 
 struct app {
   const char* path;
@@ -227,15 +228,28 @@ static void reload(app* a) {
 static b8 edit(app* a, u32 key) {
   switch (key) {
     case APP_KEY_BACKSPACE: return editor_backspace(&a->query);
+    case APP_KEY_DELETE: return editor_delete(&a->query);
+    case APP_KEY_WORD_BACKSPACE:
+    case CTRL('w'): return editor_delete_word(&a->query);
+    case CTRL('u'): return editor_delete_to_start(&a->query);
+    case CTRL('k'): return editor_delete_to_end(&a->query);
+    case APP_KEY_WORD_LEFT:
+      editor_word_left(&a->query);
+      return 0;
+    case APP_KEY_WORD_RIGHT:
+      editor_word_right(&a->query);
+      return 0;
     case APP_KEY_LEFT:
       editor_left(&a->query);
       return 0;
     case APP_KEY_RIGHT:
       editor_right(&a->query);
       return 0;
+    case CTRL('a'):
     case APP_KEY_HOME:
       editor_home(&a->query);
       return 0;
+    case CTRL('e'):
     case APP_KEY_END:
       editor_end(&a->query);
       return 0;

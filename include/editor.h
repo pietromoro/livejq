@@ -16,10 +16,19 @@ typedef struct {
 void editor_set(editor* e, const char* s);
 void editor_free(editor* e);
 void editor_insert(editor* e, u32 c);
-/* False when there is nothing before the cursor. */
+/* The deletions return false when nothing was deleted. */
 b8 editor_backspace(editor* e);
+b8 editor_delete(editor* e);
+/* Deletes back to where editor_word_left would land. */
+b8 editor_delete_word(editor* e);
+b8 editor_delete_to_start(editor* e);
+b8 editor_delete_to_end(editor* e);
 void editor_left(editor* e);
 void editor_right(editor* e);
+/* Moves to the start of the word before the cursor, or past the end of the
+ * word after it. */
+void editor_word_left(editor* e);
+void editor_word_right(editor* e);
 void editor_home(editor* e);
 void editor_end(editor* e);
 /* Draws the text into row y from column x up to max_x, scrolled to keep the

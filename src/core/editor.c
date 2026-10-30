@@ -1,9 +1,12 @@
 /* editor - a single-line text editor, the cursor kept on code points. */
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "editor.h"
 
+static b8 cut(editor* e, usz from, usz to);
+static b8 word_byte(char c);
 static i32 columns(const char* s, usz from, usz to);
 static usz skip_columns(const char* s, usz len, i32 n);
 
@@ -45,14 +48,27 @@ void editor_insert(editor* e, u32 c) {
 b8 editor_backspace(editor* e) {
   usz end = e->cursor;
 
-  if (end == 0) return 0;
-
   editor_left(e);
-  memmove(e->text + e->cursor, e->text + end, e->len - end);
-  e->len -= end - e->cursor;
-  e->text[e->len] = '\0';
-  return 1;
+  return cut(e, e->cursor, end);
 }
+
+b8 editor_delete(editor* e) {
+  usz from = e->cursor;
+
+  editor_right(e);
+  return cut(e, from, e->cursor);
+}
+
+b8 editor_delete_word(editor* e) {
+  usz end = e->cursor;
+
+  editor_word_left(e);
+  return cut(e, e->cursor, end);
+}
+
+b8 editor_delete_to_start(editor* e) { return cut(e, 0, e->cursor); }
+
+b8 editor_delete_to_end(editor* e) { return cut(e, e->cursor, e->len); }
 
 void editor_left(editor* e) {
   while (e->cursor > 0 && ((u8)e->text[--e->cursor] & 0xc0) == 0x80) {}
@@ -62,6 +78,17 @@ void editor_right(editor* e) {
   if (e->cursor >= e->len) return;
 
   while (++e->cursor < e->len && ((u8)e->text[e->cursor] & 0xc0) == 0x80) {}
+}
+
+/* a word is a run of letters, digits, underscores and non-ascii text. */
+void editor_word_left(editor* e) {
+  while (e->cursor > 0 && !word_byte(e->text[e->cursor - 1])) e->cursor--;
+  while (e->cursor > 0 && word_byte(e->text[e->cursor - 1])) e->cursor--;
+}
+
+void editor_word_right(editor* e) {
+  while (e->cursor < e->len && !word_byte(e->text[e->cursor])) e->cursor++;
+  while (e->cursor < e->len && word_byte(e->text[e->cursor])) e->cursor++;
 }
 
 void editor_home(editor* e) { e->cursor = 0; }
@@ -86,6 +113,22 @@ i32 editor_render(editor* e, grid* g, i32 x, i32 y, i32 max_x, u8 st) {
   from = skip_columns(e->text, e->len, e->scroll);
   grid_put(g, x, y, max_x, e->text + from, e->len - from, st);
   return x + at - e->scroll;
+}
+
+static b8 cut(editor* e, usz from, usz to) {
+  if (from == to) return 0;
+
+  memmove(e->text + from, e->text + to, e->len - to);
+  e->len -= to - from;
+  e->text[e->len] = '\0';
+  e->cursor = from;
+  return 1;
+}
+
+static b8 word_byte(char c) {
+  u8 b = (u8)c;
+
+  return b >= 0x80 || isalnum(b) || b == '_';
 }
 
 static i32 columns(const char* s, usz from, usz to) {

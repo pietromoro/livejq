@@ -14,6 +14,8 @@ static const char* render(editor* e, i32* cursor);
 static void test_insert_at_cursor(void);
 static void test_backspace(void);
 static void test_multibyte(void);
+static void test_word_moves(void);
+static void test_deletions(void);
 static void test_scroll_follows_cursor(void);
 static void test_scroll_comes_back(void);
 
@@ -87,6 +89,61 @@ static void test_multibyte(void) {
   editor_free(&e);
 }
 
+static void test_word_moves(void) {
+  editor e = { 0 };
+
+  editor_set(&e, ".users[0].na\xc3\xafve | $x_1");
+  editor_word_left(&e);
+  ASSERT_EQ(e.cursor, 20);
+  editor_word_left(&e);
+  ASSERT_EQ(e.cursor, 10);
+  editor_word_left(&e);
+  ASSERT_EQ(e.cursor, 7);
+  editor_word_left(&e);
+  ASSERT_EQ(e.cursor, 1);
+  editor_word_left(&e);
+  ASSERT_EQ(e.cursor, 0);
+  editor_word_left(&e);
+  ASSERT_EQ(e.cursor, 0);
+  editor_word_right(&e);
+  ASSERT_EQ(e.cursor, 6);
+  editor_word_right(&e);
+  ASSERT_EQ(e.cursor, 8);
+  editor_word_right(&e);
+  ASSERT_EQ(e.cursor, 16);
+  editor_word_right(&e);
+  ASSERT_EQ(e.cursor, 23);
+  editor_word_right(&e);
+  ASSERT_EQ(e.cursor, 23);
+  editor_free(&e);
+}
+
+static void test_deletions(void) {
+  editor e = { 0 };
+
+  editor_set(&e, ".a.bc | keys");
+  CHECK(editor_delete_word(&e));
+  ASSERT_STREQ(e.text, ".a.bc | ");
+  CHECK(editor_delete_word(&e));
+  ASSERT_STREQ(e.text, ".a.");
+  editor_home(&e);
+  CHECK(!editor_delete_word(&e));
+  CHECK(editor_delete(&e));
+  ASSERT_STREQ(e.text, "a.");
+  ASSERT_EQ(e.cursor, 0);
+  editor_end(&e);
+  CHECK(!editor_delete(&e));
+  CHECK(!editor_delete_to_end(&e));
+  editor_left(&e);
+  CHECK(editor_delete_to_start(&e));
+  ASSERT_STREQ(e.text, ".");
+  ASSERT_EQ(e.cursor, 0);
+  CHECK(editor_delete_to_end(&e));
+  ASSERT_STREQ(e.text, "");
+  CHECK(!editor_delete_to_start(&e));
+  editor_free(&e);
+}
+
 /* ten columns of text area, the last one kept free for the cursor. */
 static void test_scroll_follows_cursor(void) {
   editor e = { 0 };
@@ -120,6 +177,8 @@ static void test_scroll_comes_back(void) {
   f(test_insert_at_cursor)          \
   f(test_backspace)                 \
   f(test_multibyte)                 \
+  f(test_word_moves)                \
+  f(test_deletions)                 \
   f(test_scroll_follows_cursor)     \
   f(test_scroll_comes_back)
 
