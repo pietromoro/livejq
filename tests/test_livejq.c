@@ -3,6 +3,9 @@
 
 #include "test_helper.in"
 
+static void test_array_len(void);
+static void test_primitive_sizes(void);
+
 static void test_array_len(void) {
   i32 xs[3];
 
@@ -21,10 +24,11 @@ static void test_primitive_sizes(void) {
   ASSERT_EQ(sizeof(i64), 8);
 }
 
-#define TESTS(f) \
-  f(test_array_len) \
+#define TESTS(f)     \
+  f(test_array_len)  \
   f(test_primitive_sizes)
 
 #define TEST_HELPER_MAIN
 
+/* curufmt skip translation-unit-order */
 #include "test_helper.in"
