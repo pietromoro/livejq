@@ -1,4 +1,7 @@
 /* tree tests - navigation, folds and state kept by path, through the core. */
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "app.h"
@@ -17,6 +20,7 @@ static app* open_app(const char* path, const char* query);
 static void press(app* a, u32 key);
 static void type(app* a, const char* s);
 static void retype(app* a, const char* s);
+static void write_file(const char* path, const char* text);
 static const char* line(app* a, i32 y);
 static const char* status(app* a);
 static b8 selected(app* a, i32 y);
@@ -25,6 +29,9 @@ static void test_navigation(void);
 static void test_fold_and_unfold(void);
 static void test_fold_subtree(void);
 static void test_page_up_and_down(void);
+static void test_query_edit_keeps_state(void);
+static void test_cursor_falls_back_to_ancestor(void);
+static void test_reload_keeps_state(void);
 static void test_default_expansion(void);
 static void test_single_root_unlabeled(void);
 static void test_truncation(void);
@@ -76,6 +83,18 @@ static void retype(app* a, const char* s) {
   type(a, s);
   press(a, '\t');
   CHECK(app_settle(a, SETTLE_MS));
+}
+
+static void write_file(const char* path, const char* text) {
+  FILE* f = fopen(path, "wb");
+
+  if (!f) {
+    FAIL("cannot write %s", path);
+    return;
+  }
+
+  fputs(text, f);
+  fclose(f);
 }
 
 static const char* line(app* a, i32 y) {
@@ -252,6 +271,80 @@ static void test_page_up_and_down(void) {
   app_free(a);
 }
 
+static void test_query_edit_keeps_state(void) {
+  app* a = open_app("tests/data/sample.json", ".");
+
+  if (!a) return;
+
+  press(a, '\t');
+  press(a, 'j');
+  press(a, 'j');
+  press(a, 'h');
+  type(a, "jjj");
+  ASSERT_STREQ(status(a), "#0 .users[1].name");
+
+  retype(a, ". + {extra: 1}");
+  ASSERT_STREQ(line(a, 3), "    " CLOSED "0: {3}");
+  ASSERT_STREQ(line(a, 4), "    " OPEN "1: {3}");
+  ASSERT_STREQ(status(a), "#0 .users[1].name");
+  CHECK(selected(a, 6));
+  app_free(a);
+}
+
+static void test_cursor_falls_back_to_ancestor(void) {
+  app* a = open_app("tests/data/sample.json", ".");
+
+  if (!a) return;
+
+  press(a, '\t');
+  type(a, "jjjjjjjj");
+  ASSERT_STREQ(status(a), "#0 .users[1].name");
+
+  retype(a, "del(.users[1])");
+  ASSERT_STREQ(status(a), "#0 .users");
+
+  retype(a, "1");
+  ASSERT_STREQ(status(a), "#0 .");
+  app_free(a);
+}
+
+static void test_reload_keeps_state(void) {
+  const char* dir = getenv("TMPDIR");
+  char path[512];
+  app_event ev;
+  app* a;
+
+  snprintf(path, sizeof(path), "%s/livejq-tree-%" PRId64 ".json", dir ? dir : "/tmp", clock_us());
+  write_file(path, "{\"a\":{\"b\":1},\"c\":[1,2]}");
+  a = open_app(path, ".");
+  if (!a) return;
+
+  press(a, '\t');
+  press(a, 'j');
+  press(a, 'h');
+  press(a, 'G');
+  ASSERT_STREQ(status(a), ".c[1]");
+
+  write_file(path, "{\"a\":{\"b\":2},\"c\":[1,2,3]}");
+  ev.kind = EV_FILE_CHANGED;
+  ev.key = 0;
+  ev.now_ms = 0;
+  app_feed(a, ev);
+  CHECK(app_settle(a, SETTLE_MS));
+  ASSERT_STREQ(line(a, 2), "  " CLOSED "a: {1}");
+  ASSERT_STREQ(line(a, 3), "  " OPEN "c: [3]");
+  ASSERT_STREQ(status(a), ".c[1]");
+  CHECK(selected(a, 5));
+
+  remove(path);
+  app_feed(a, ev);
+  CHECK(app_settle(a, SETTLE_MS));
+  ASSERT_STREQ(line(a, 3), "  " OPEN "c: [3]");
+  line(a, H - 1);
+  ASSERT_EQ(grid_at(screen, W - 1, H - 1).style, STYLE_ERROR);
+  app_free(a);
+}
+
 static void test_default_expansion(void) {
   app* a = open_app("tests/data/sample.json", "select(.ok) | {a: [range(2000)], b: [1]}");
 
@@ -326,6 +419,9 @@ static void test_path_quoting(void) {
   f(test_fold_and_unfold)                 \
   f(test_fold_subtree)                    \
   f(test_page_up_and_down)                \
+  f(test_query_edit_keeps_state)          \
+  f(test_cursor_falls_back_to_ancestor)   \
+  f(test_reload_keeps_state)              \
   f(test_default_expansion)               \
   f(test_single_root_unlabeled)           \
   f(test_truncation)                      \

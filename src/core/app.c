@@ -12,7 +12,10 @@
 #define DEFAULT_CAP 10000
 
 struct app {
+  const char* path;
   const char* name;
+  b8 raw;
+  b8 slurp;
   usz cap;
   eval* ev;
   tree* tree;
@@ -36,6 +39,7 @@ struct app {
 
 static void key(app* a, app_event ev);
 static void tree_key(app* a, u32 key);
+static void reload(app* a);
 static b8 edit(app* a, u32 key);
 static void query_insert(app* a, u32 c);
 static void query_backspace(app* a);
@@ -63,7 +67,10 @@ app* app_new(const app_opts* opts, char* err, usz errlen) {
 #ifdef _WIN32
   if (strrchr(opts->path, '\\') > slash) slash = strrchr(opts->path, '\\');
 #endif
+  a->path = opts->path;
   a->name = slash ? slash + 1 : opts->path;
+  a->raw = opts->raw;
+  a->slurp = opts->slurp;
   a->cap = opts->cap ? opts->cap : DEFAULT_CAP;
   a->outputs = jv_array();
   a->error = jv_null();
@@ -103,6 +110,9 @@ void app_feed(app* a, app_event ev) {
       break;
     case EV_TICK:
       if (a->edited && ev.now_ms >= a->submit_at) submit(a);
+      break;
+    case EV_FILE_CHANGED:
+      reload(a);
       break;
   }
 
@@ -190,6 +200,23 @@ static void tree_key(app* a, u32 key) {
       break;
     default: break;
   }
+}
+
+/* a file that cannot be read keeps the last data, with the reason shown. */
+static void reload(app* a) {
+  load_result loaded;
+  file_stamp stamp;
+  char err[256];
+
+  jv_free(a->load_error);
+  if (!load_file(a->path, a->raw, a->slurp, &loaded, &stamp, err, sizeof(err))) {
+    a->load_error = jv_string(err);
+    return;
+  }
+
+  a->load_error = loaded.error;
+  eval_set_inputs(a->ev, loaded.inputs);
+  submit(a);
 }
 
 static b8 edit(app* a, u32 key) {

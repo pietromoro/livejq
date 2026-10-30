@@ -1,4 +1,4 @@
-/* tree - the outputs as foldable lines, folds kept by path. */
+/* tree - the outputs as foldable lines, folds and cursor kept by path. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,15 +48,19 @@ struct tree {
   usz nfolds;
   usz folds_cap;
 
+  char* cursor_key; /* where the cursor wants to be */
   i32 cursor;
   i32 top;
   i32 page;
 
   strbuf key; /* path of the row being built */
+  i32 best;   /* deepest row on the way to cursor_key */
+  usz best_len;
 };
 
 static void rebuild(tree* t);
 static void add_rows(tree* t, jv value, jv key, i32 parent, i32 depth);
+static void match_cursor(tree* t, i32 r);
 static b8 is_open(tree* t, jv value, i32 depth);
 static b8 has_children(jv v);
 static i32 count_rows(jv v, i32 levels, i32 budget);
@@ -64,6 +68,7 @@ static expand_mode pick_mode(tree* t);
 static void set_subtree(tree* t, jv value, b8 open);
 static void fold_or_leave(tree* t);
 static void fold_row(tree* t, b8 open);
+static void remember_cursor(tree* t);
 static void row_key(tree* t, i32 r);
 static void key_segment(strbuf* b, jv key, i32 depth);
 static fold* fold_find(tree* t, const char* key);
@@ -100,13 +105,13 @@ void tree_free(tree* t) {
   jv_free(t->roots);
   free(t->rows);
   free(t->folds);
+  free(t->cursor_key);
   free(t->key.s);
   free(t);
 }
 
 void tree_set(tree* t, jv outputs) {
-  t->cursor = 0;
-  t->top = 0;
+  remember_cursor(t);
   jv_free(t->roots);
   t->roots = outputs;
   t->nroots = jv_array_length(jv_copy(outputs));
@@ -153,6 +158,7 @@ void tree_do(tree* t, tree_op op) {
     case TREE_UNFOLD_ALL:
       row_key(t, t->cursor);
       set_subtree(t, t->rows[t->cursor].value, op == TREE_UNFOLD_ALL);
+      remember_cursor(t);
       rebuild(t);
       break;
   }
@@ -160,6 +166,8 @@ void tree_do(tree* t, tree_op op) {
   if (t->cursor < 0) t->cursor = 0;
   if (t->cursor > t->nrows - 1) t->cursor = t->nrows - 1;
   if (t->top < 0) t->top = 0;
+
+  remember_cursor(t);
 }
 
 void tree_render(tree* t, grid* g, i32 y, i32 h, b8 dim) {
@@ -204,6 +212,8 @@ static void rebuild(tree* t) {
   }
 
   t->nrows = 0;
+  t->best = 0;
+  t->best_len = 0;
   for (i32 i = 0; i < t->nroots; i++) {
     sb_cut(&t->key, 0);
     snprintf(num, sizeof(num), "#%d", i);
@@ -211,8 +221,7 @@ static void rebuild(tree* t) {
     add_rows(t, jv_array_get(jv_copy(t->roots), i), jv_number(i), -1, 0);
   }
 
-  if (t->cursor > t->nrows - 1) t->cursor = t->nrows - 1;
-  if (t->cursor < 0) t->cursor = 0;
+  t->cursor = t->best;
 }
 
 static void add_rows(tree* t, jv value, jv key, i32 parent, i32 depth) {
@@ -233,6 +242,7 @@ static void add_rows(tree* t, jv value, jv key, i32 parent, i32 depth) {
   t->rows[r].depth = depth;
   t->rows[r].open = is_open(t, value, depth);
   t->nrows++;
+  match_cursor(t, r);
 
   if (t->rows[r].open && jv_get_kind(value) == JV_KIND_ARRAY) {
     jv_array_foreach(value, i, item) add_rows(t, item, jv_number(i), r, depth + 1);
@@ -241,6 +251,18 @@ static void add_rows(tree* t, jv value, jv key, i32 parent, i32 depth) {
   }
 
   sb_cut(&t->key, mark);
+}
+
+static void match_cursor(tree* t, i32 r) {
+  const char* want = t->cursor_key;
+  usz len = t->key.len;
+
+  if (!want || len < t->best_len || strncmp(want, t->key.s, len) != 0) return;
+
+  if (want[len] != '\0' && want[len] != '.' && want[len] != '[') return;
+
+  t->best = r;
+  t->best_len = len + 1;
 }
 
 static b8 is_open(tree* t, jv value, i32 depth) {
@@ -340,7 +362,19 @@ static void fold_or_leave(tree* t) {
 static void fold_row(tree* t, b8 open) {
   row_key(t, t->cursor);
   fold_set(t, t->key.s, open);
+  remember_cursor(t);
   rebuild(t);
+}
+
+static void remember_cursor(tree* t) {
+  if (t->nrows == 0) return;
+
+  row_key(t, t->cursor);
+  free(t->cursor_key);
+  t->cursor_key = malloc(t->key.len + 1);
+  if (!t->cursor_key) abort();
+
+  memcpy(t->cursor_key, t->key.s, t->key.len + 1);
 }
 
 /* the path of row r into t->key, in the encoding folds are keyed by. */

@@ -25,7 +25,8 @@ typedef struct tree tree;
 
 tree* tree_new(void);
 void tree_free(tree* t);
-/* Replaces the roots with the array outputs, keeping folds by path. */
+/* Replaces the roots with the array outputs, keeping folds and the cursor by
+ * path. */
 void tree_set(tree* t, jv outputs);
 void tree_do(tree* t, tree_op op);
 /* Draws the lines into rows y..y+h-1, scrolled to show the cursor. */

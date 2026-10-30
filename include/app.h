@@ -24,6 +24,7 @@ enum {
 typedef enum {
   EV_KEY = 0,
   EV_TICK,
+  EV_FILE_CHANGED, /* reads the file again and reruns the query */
 } app_event_kind;
 
 typedef enum {
