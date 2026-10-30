@@ -1,0 +1,6 @@
+[submodule "vendor/jq"]
+	path = vendor/jq
+	url = https://github.com/jqlang/jq.git
+[submodule "vendor/PDCursesMod"]
+	path = vendor/PDCursesMod
+	url = https://github.com/Bill-Gray/PDCursesMod.git
