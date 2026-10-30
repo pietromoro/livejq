@@ -83,7 +83,7 @@ static const char* line(app* a, i32 y) {
 
 static u8 style_at(app* a, i32 x, i32 y) {
   line(a, y);
-  return grid_at(screen, x, y).style;
+  return grid_at(screen, x, y).style & ~STYLE_SELECTED;
 }
 
 static void test_multi_document(void) {
@@ -92,9 +92,12 @@ static void test_multi_document(void) {
   if (!a) return;
 
   ASSERT_STREQ(line(a, 0), "QUERY keys");
-  ASSERT_STREQ(line(a, 1), "[\"ok\",\"users\"]");
-  ASSERT_STREQ(line(a, 2), "[\"second\"]");
-  ASSERT_STREQ(line(a, 3), "");
+  ASSERT_STREQ(line(a, 1), "\xe2\x96\xbe #0 [2]");
+  ASSERT_STREQ(line(a, 2), "    0: \"ok\"");
+  ASSERT_STREQ(line(a, 3), "    1: \"users\"");
+  ASSERT_STREQ(line(a, 4), "\xe2\x96\xbe #1 [1]");
+  ASSERT_STREQ(line(a, 5), "    0: \"second\"");
+  ASSERT_STREQ(line(a, 6), "");
   CHECK(strstr(line(a, H - 1), "sample.json \xc2\xb7 2 outputs") != NULL);
   app_free(a);
 }
@@ -104,10 +107,10 @@ static void test_raw_lines(void) {
 
   if (!a) return;
 
-  ASSERT_STREQ(line(a, 1), "10");
-  ASSERT_STREQ(line(a, 2), "11");
-  ASSERT_STREQ(line(a, 3), "0");
-  ASSERT_STREQ(line(a, 4), "6");
+  ASSERT_STREQ(line(a, 1), "  #0 10");
+  ASSERT_STREQ(line(a, 2), "  #1 11");
+  ASSERT_STREQ(line(a, 3), "  #2 0");
+  ASSERT_STREQ(line(a, 4), "  #3 6");
   ASSERT_STREQ(line(a, 5), "");
   app_free(a);
 }
@@ -117,7 +120,7 @@ static void test_raw_slurp(void) {
 
   if (!a) return;
 
-  ASSERT_STREQ(line(a, 1), "\"first line\\nsecond line\\n\\nfourth\"");
+  ASSERT_STREQ(line(a, 1), "  \"first line\\nsecond line\\n\\nfourth\"");
   ASSERT_STREQ(line(a, 2), "");
   app_free(a);
 }
@@ -127,7 +130,9 @@ static void test_slurp(void) {
 
   if (!a) return;
 
-  ASSERT_STREQ(line(a, 1), "[\"ok\",\"second\"]");
+  ASSERT_STREQ(line(a, 1), "\xe2\x96\xbe [2]");
+  ASSERT_STREQ(line(a, 2), "    0: \"ok\"");
+  ASSERT_STREQ(line(a, 3), "    1: \"second\"");
   CHECK(strstr(line(a, H - 1), "1 outputs") != NULL);
   app_free(a);
 }
@@ -140,8 +145,10 @@ static void test_args(void) {
   a = open_app("tests/data/sample.json", "[$name, $n]", 0, 0, args, 0);
   if (!a) return;
 
-  ASSERT_STREQ(line(a, 1), "[\"x\",[3]]");
-  ASSERT_STREQ(line(a, 2), "[\"x\",[3]]");
+  ASSERT_STREQ(line(a, 2), "    0: \"x\"");
+  ASSERT_STREQ(line(a, 3), "  \xe2\x96\xbe 1: [1]");
+  ASSERT_STREQ(line(a, 4), "      0: 3");
+  ASSERT_STREQ(line(a, 5), "\xe2\x96\xbe #1 [2]");
   app_free(a);
 }
 
@@ -150,19 +157,19 @@ static void test_compile_error_keeps_last_good(void) {
 
   if (!a) return;
 
-  ASSERT_STREQ(line(a, 1), "true");
-  ASSERT_EQ(style_at(a, 0, 1), STYLE_TRUE);
+  ASSERT_STREQ(line(a, 1), "  #0 true");
+  ASSERT_EQ(style_at(a, 5, 1), STYLE_TRUE);
 
   type(a, " | [", 0);
   CHECK(app_settle(a, SETTLE_MS));
   ASSERT_STREQ(line(a, 0), "QUERY .ok | [");
-  ASSERT_STREQ(line(a, 1), "true");
-  ASSERT_EQ(style_at(a, 0, 1), STYLE_DIM);
+  ASSERT_STREQ(line(a, 1), "  #0 true");
+  ASSERT_EQ(style_at(a, 5, 1), STYLE_DIM);
   CHECK(strstr(line(a, H - 1), "syntax error") != NULL);
 
   retype(a, ".ok");
   CHECK(app_settle(a, SETTLE_MS));
-  ASSERT_EQ(style_at(a, 0, 1), STYLE_TRUE);
+  ASSERT_EQ(style_at(a, 5, 1), STYLE_TRUE);
   CHECK(strstr(line(a, H - 1), "error") == NULL);
   app_free(a);
 }
@@ -172,8 +179,8 @@ static void test_runtime_error_keeps_partial_outputs(void) {
 
   if (!a) return;
 
-  ASSERT_STREQ(line(a, 1), "1");
-  ASSERT_STREQ(line(a, 2), "1");
+  ASSERT_STREQ(line(a, 1), "  #0 1");
+  ASSERT_STREQ(line(a, 2), "  #1 1");
   ASSERT_STREQ(line(a, 3), "");
   CHECK(strstr(line(a, H - 1), "2 outputs") != NULL);
   CHECK(strstr(line(a, H - 1), "boom") != NULL);
@@ -196,8 +203,8 @@ static void test_output_cap(void) {
 
   if (!a) return;
 
-  ASSERT_STREQ(line(a, 1), "0");
-  ASSERT_STREQ(line(a, 3), "2");
+  ASSERT_STREQ(line(a, 1), "  #0 0");
+  ASSERT_STREQ(line(a, 3), "  #2 2");
   ASSERT_STREQ(line(a, 4), "");
   CHECK(strstr(line(a, H - 1), "3 outputs (capped)") != NULL);
   app_free(a);
@@ -214,12 +221,12 @@ static void test_debounce(void) {
   tick.key = 0;
   tick.now_ms = 149;
   app_feed(a, tick);
-  CHECK(strncmp(line(a, 1), "{\"users\":", 9) == 0);
+  ASSERT_STREQ(line(a, 1), "\xe2\x96\xbe #0 {2}");
 
   tick.now_ms = 150;
   app_feed(a, tick);
   CHECK(app_settle(a, SETTLE_MS));
-  ASSERT_STREQ(line(a, 1), "true");
+  ASSERT_STREQ(line(a, 1), "  #0 true");
   app_free(a);
 }
 
@@ -236,7 +243,7 @@ static void test_cancel_on_edit(void) {
   start = clock_us();
   CHECK(app_settle(a, SETTLE_MS));
   CHECK(clock_us() - start < 50000);
-  ASSERT_STREQ(line(a, 1), "2");
+  ASSERT_STREQ(line(a, 1), "  #0 2");
   app_free(a);
 }
 
@@ -245,7 +252,8 @@ static void test_invalid_json_opens(void) {
 
   if (!a) return;
 
-  ASSERT_STREQ(line(a, 1), "{\"a\":1}");
+  ASSERT_STREQ(line(a, 1), "\xe2\x96\xbe {1}");
+  ASSERT_STREQ(line(a, 2), "    a: 1");
   CHECK(strstr(line(a, H - 1), "Unfinished JSON term") != NULL);
   app_free(a);
 }

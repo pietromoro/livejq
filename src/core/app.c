@@ -6,6 +6,7 @@
 #include "app.h"
 #include "eval.h"
 #include "loader.h"
+#include "tree.h"
 
 #define DEBOUNCE_MS 150
 #define DEFAULT_CAP 10000
@@ -14,6 +15,7 @@ struct app {
   const char* name;
   usz cap;
   eval* ev;
+  tree* tree;
 
   char* query;
   usz qlen;
@@ -37,7 +39,6 @@ static void query_backspace(app* a);
 static void submit(app* a);
 static void apply(app* a);
 static void render_status(app* a, grid* g);
-static u8 kind_style(jv v);
 
 app* app_new(const app_opts* opts, char* err, usz errlen) {
   const char* q = opts->query ? opts->query : ".";
@@ -66,6 +67,8 @@ app* app_new(const app_opts* opts, char* err, usz errlen) {
   a->ev = eval_new();
   if (!a->ev) abort();
 
+  a->tree = tree_new();
+
   eval_set_inputs(a->ev, loaded.inputs);
   if (jv_get_kind(opts->args) == JV_KIND_OBJECT)
     eval_set_args(a->ev, opts->args);
@@ -81,6 +84,7 @@ void app_free(app* a) {
   if (!a) return;
 
   eval_free(a->ev);
+  tree_free(a->tree);
   jv_free(a->outputs);
   jv_free(a->error);
   jv_free(a->load_error);
@@ -111,24 +115,15 @@ b8 app_settle(app* a, i64 timeout_ms) {
 }
 
 void app_render(app* a, grid* g) {
-  i32 row = 1;
   i32 n = jv_array_length(jv_copy(a->outputs));
 
   grid_clear(g);
   grid_put(g, grid_puts(g, 0, 0, "QUERY ", STYLE_LABEL), 0, g->w, a->query, a->qlen, STYLE_NORMAL);
 
   if (a->has_result && n == 0 && jv_get_kind(a->error) == JV_KIND_NULL)
-    grid_puts(g, 0, row, "(no output)", STYLE_EMPTY);
+    grid_puts(g, 0, 1, "(no output)", STYLE_EMPTY);
 
-  for (i32 i = 0; i < n && row < g->h - 1; i++, row++) {
-    jv v = jv_array_get(jv_copy(a->outputs), i);
-    u8 st = a->stale ? STYLE_DIM : kind_style(v);
-    jv text = jv_dump_string(v, 0);
-
-    grid_puts(g, 0, row, jv_string_value(text), st);
-    jv_free(text);
-  }
-
+  tree_render(a->tree, g, 1, g->h - 2, a->stale);
   render_status(a, g);
 }
 
@@ -215,6 +210,7 @@ static void apply(app* a) {
   a->elapsed_us = r.elapsed_us;
   jv_free(a->outputs);
   a->outputs = r.outputs;
+  tree_set(a->tree, jv_copy(a->outputs));
 }
 
 static void render_status(app* a, grid* g) {
@@ -246,16 +242,5 @@ static void render_status(app* a, grid* g) {
 
     if (at < x + 2) at = x + 2;
     grid_put(g, at, y, g->w, s, len, STYLE_ERROR);
-  }
-}
-
-static u8 kind_style(jv v) {
-  switch (jv_get_kind(v)) {
-    case JV_KIND_NULL: return STYLE_NULL;
-    case JV_KIND_FALSE: return STYLE_FALSE;
-    case JV_KIND_TRUE: return STYLE_TRUE;
-    case JV_KIND_NUMBER: return STYLE_NUMBER;
-    case JV_KIND_STRING: return STYLE_STRING;
-    default: return STYLE_PUNCT;
   }
 }
