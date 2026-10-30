@@ -1,20 +1,17 @@
-/* livejq - runs `.` over a JSON file and prints the result. */
+/* livejq - the entry point: the UI over a JSON file, or the probe. */
 #include <locale.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
 #include <curses.h>
-#include <jq.h>
 
 #include "defines.h"
+#include "tui.h"
 
 static i32 probe(void);
 static void probe_palette(void);
 static void probe_log(i32 row, const char* fmt, ...);
-static void enter_screen(void);
-static void leave_screen(void);
-static i32 run_identity(const char* path);
 
 int main(int argc, char** argv) {
   if (argc == 2 && strcmp(argv[1], "--probe") == 0)
@@ -24,7 +21,7 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  return run_identity(argv[1]);
+  return tui_run(argv[1]);
 }
 
 static i32 probe(void) {
@@ -32,7 +29,7 @@ static i32 probe(void) {
   wint_t ch;
 
   setlocale(LC_ALL, "");
-  enter_screen();
+  tui_enter();
   raw();
   noecho();
   keypad(stdscr, TRUE);
@@ -81,27 +78,8 @@ static i32 probe(void) {
     refresh();
   }
 
-  leave_screen();
+  tui_leave();
   return 0;
-}
-
-/* PDCursesMod's vt port switches screens with ?47, which some terminals
- * ignore, and on endwin moves the cursor to the bottom row and forces a
- * block cursor. ?1049 around it saves and restores the cursor and screen. */
-static void enter_screen(void) {
-#ifndef _WIN32
-  fputs("\033[?1049h", stdout);
-  fflush(stdout);
-#endif
-  initscr();
-}
-
-static void leave_screen(void) {
-  endwin();
-#ifndef _WIN32
-  fputs("\033[?1049l\033[0 q", stdout);
-  fflush(stdout);
-#endif
 }
 
 static void probe_palette(void) {
@@ -158,53 +136,4 @@ static void probe_log(i32 row, const char* fmt, ...) {
   va_start(ap, fmt);
   vw_printw(stdscr, fmt, ap);
   va_end(ap);
-}
-
-static i32 run_identity(const char* path) {
-  jq_state* jq = jq_init();
-  jv data;
-  i32 rc = 0;
-
-  if (!jq) {
-    fprintf(stderr, "livejq: cannot initialize jq\n");
-    return 1;
-  }
-
-  if (!jq_compile(jq, ".")) {
-    jq_teardown(&jq);
-    return 1;
-  }
-
-  /* jv_load_file yields an array of every JSON value in the file. */
-  data = jv_load_file(path, 0);
-  if (!jv_is_valid(data)) {
-    jv msg = jv_invalid_get_msg(data);
-    fprintf(stderr, "livejq: %s\n", jv_string_value(msg));
-    jv_free(msg);
-    jq_teardown(&jq);
-    return 1;
-  }
-
-  for (i32 i = 0; i < jv_array_length(jv_copy(data)); i++) {
-    jv result;
-
-    jq_start(jq, jv_array_get(jv_copy(data), i), 0);
-    while (jv_is_valid(result = jq_next(jq))) {
-      jv_dumpf(result, stdout, JV_PRINT_PRETTY | JV_PRINT_SPACE1);
-      putchar('\n');
-    }
-
-    if (jv_invalid_has_msg(jv_copy(result))) {
-      jv msg = jv_invalid_get_msg(result);
-      fprintf(stderr, "livejq: %s\n", jv_string_value(msg));
-      jv_free(msg);
-      rc = 5;
-    } else {
-      jv_free(result);
-    }
-  }
-
-  jv_free(data);
-  jq_teardown(&jq);
-  return rc;
 }

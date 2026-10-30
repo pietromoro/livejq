@@ -35,6 +35,8 @@ pub fn build(b: *std.Build) void {
   });
   exe_mod.addIncludePath(b.path("include"));
   exe_mod.addCSourceFiles(.{ .root = b.path("src"), .files = cSources(b, "src"), .flags = c_flags });
+  exe_mod.addIncludePath(b.path("src/tui"));
+  exe_mod.addCSourceFiles(.{ .root = b.path("src/tui"), .files = cSources(b, "src/tui"), .flags = c_flags });
   for (vendor.pdc_macros) |m| exe_mod.addCMacro(m[0], m[1]);
   exe_mod.addCMacro("PDC_NCMOUSE", "1");
   exe_mod.linkLibrary(core);
