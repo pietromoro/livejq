@@ -42,7 +42,7 @@ static void tree_key(app* a, u32 key);
 static void reload(app* a);
 static b8 edit(app* a, u32 key);
 static void submit(app* a);
-static void apply(app* a);
+static b8 apply(app* a);
 static void render_status(app* a, grid* g);
 static void render_right(grid* g, i32 x, const char* s, usz len, u8 st);
 
@@ -101,7 +101,9 @@ void app_free(app* a) {
   free(a);
 }
 
-void app_feed(app* a, app_event ev) {
+b8 app_feed(app* a, app_event ev) {
+  b8 changed = ev.kind != EV_TICK;
+
   switch (ev.kind) {
     case EV_KEY:
       key(a, ev);
@@ -114,7 +116,7 @@ void app_feed(app* a, app_event ev) {
       break;
   }
 
-  apply(a);
+  return apply(a) || changed;
 }
 
 b8 app_settle(app* a, i64 timeout_ms) {
@@ -267,14 +269,14 @@ static void submit(app* a) {
   a->pending = eval_submit(a->ev, a->query.text ? a->query.text : "", a->cap);
 }
 
-static void apply(app* a) {
+static b8 apply(app* a) {
   eval_result r;
 
-  if (!eval_take(a->ev, &r)) return;
+  if (!eval_take(a->ev, &r)) return 0;
 
   if (r.id != a->pending) {
     eval_result_free(&r);
-    return;
+    return 0;
   }
 
   a->pending = 0;
@@ -284,7 +286,7 @@ static void apply(app* a) {
   if (r.compile_failed) {
     a->stale = 1;
     jv_free(r.outputs);
-    return;
+    return 1;
   }
 
   a->stale = 0;
@@ -293,6 +295,7 @@ static void apply(app* a) {
   jv_free(a->outputs);
   a->outputs = r.outputs;
   tree_set(a->tree, jv_copy(a->outputs));
+  return 1;
 }
 
 static void render_status(app* a, grid* g) {

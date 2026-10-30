@@ -57,7 +57,8 @@ typedef struct app app;
 /* NULL when the file cannot be read, with the reason in err. */
 app* app_new(const app_opts* opts, char* err, usz errlen);
 void app_free(app* a);
-void app_feed(app* a, app_event ev);
+/* True when the screen changed and needs app_render again. */
+b8 app_feed(app* a, app_event ev);
 /* Runs a pending edit without waiting for the debounce, then waits for its
  * result. False if it is still running after timeout_ms. */
 b8 app_settle(app* a, i64 timeout_ms);

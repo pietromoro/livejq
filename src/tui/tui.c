@@ -45,6 +45,7 @@ i32 tui_run(const char* path) {
   char err[256];
   app* a;
   grid* g;
+  b8 dirty = 1;
 
   memset(&o, 0, sizeof(o));
   o.path = path;
@@ -69,8 +70,10 @@ i32 tui_run(const char* path) {
     wint_t ch;
     i32 kind;
 
-    app_render(a, g);
-    blit(g);
+    if (dirty) {
+      app_render(a, g);
+      blit(g);
+    }
 
     kind = get_wch(&ch);
     ev.kind = EV_TICK;
@@ -87,7 +90,7 @@ i32 tui_run(const char* path) {
       if (translate(kind, ch, &ev.key)) ev.kind = EV_KEY;
     }
 
-    app_feed(a, ev);
+    dirty = app_feed(a, ev) || (kind == KEY_CODE_YES && ch == KEY_RESIZE);
   }
 
   tui_leave();

@@ -26,6 +26,7 @@ static void test_runtime_error_keeps_partial_outputs(void);
 static void test_empty_output(void);
 static void test_output_cap(void);
 static void test_debounce(void);
+static void test_changed_only_when_shown(void);
 static void test_cancel_on_edit(void);
 static void test_invalid_json_opens(void);
 static void test_missing_file(void);
@@ -230,6 +231,33 @@ static void test_debounce(void) {
   app_free(a);
 }
 
+/* a tick reports a change only when a result arrives, so the front-end
+ * draws only then. */
+static void test_changed_only_when_shown(void) {
+  app* a = open_app("tests/data/sample.json", ".", 0, 0, jv_invalid(), 0);
+  app_event ev;
+  i64 deadline = clock_us() / 1000 + SETTLE_MS;
+  b8 changed = 0;
+
+  if (!a) return;
+
+  ev.kind = EV_TICK;
+  ev.key = 0;
+  ev.now_ms = 0;
+  CHECK(!app_feed(a, ev));
+  ev.kind = EV_KEY;
+  ev.key = 'k';
+  CHECK(app_feed(a, ev));
+  ev.kind = EV_TICK;
+  ev.now_ms = 1000;
+  while (!changed && clock_us() / 1000 < deadline) changed = app_feed(a, ev);
+
+  CHECK(changed);
+  ASSERT_STREQ(line(a, 1), "  #0 null");
+  CHECK(!app_feed(a, ev));
+  app_free(a);
+}
+
 static void test_cancel_on_edit(void) {
   app* a = open_app("tests/data/sample.json", "1", 0, 0, jv_invalid(), 0);
   i64 start;
@@ -280,6 +308,7 @@ static void test_missing_file(void) {
   f(test_empty_output)                         \
   f(test_output_cap)                           \
   f(test_debounce)                             \
+  f(test_changed_only_when_shown)              \
   f(test_cancel_on_edit)                       \
   f(test_invalid_json_opens)                   \
   f(test_missing_file)
