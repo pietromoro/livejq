@@ -66,6 +66,20 @@ i32 grid_put(grid* g, i32 x, i32 y, i32 max_x, const char* s, usz len, u8 st) {
   return x;
 }
 
+i32 grid_put_fit(grid* g, i32 x, i32 y, i32 max_x, const char* s, usz len, u8 st) {
+  i32 n = 0;
+
+  if (max_x > g->w) max_x = g->w;
+  if (x >= max_x) return x;
+
+  for (usz i = 0; i < len; i++) n += ((u8)s[i] & 0xc0) != 0x80;
+
+  if (x + n <= max_x) return grid_put(g, x, y, max_x, s, len, st);
+
+  grid_put(g, x, y, max_x - 1, s, len, st);
+  return grid_put(g, max_x - 1, y, max_x, "\xe2\x80\xa6", 3, st);
+}
+
 i32 grid_puts(grid* g, i32 x, i32 y, const char* s, u8 st) {
   return grid_put(g, x, y, g->w, s, strlen(s), st);
 }
