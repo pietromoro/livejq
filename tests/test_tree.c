@@ -127,10 +127,14 @@ static void test_focus(void) {
   if (!a) return;
 
   ASSERT_EQ(app_focused(a), FOCUS_QUERY);
+  line(a, 0);
+  ASSERT_EQ(screen->cursor_x, 7);
+  ASSERT_EQ(screen->cursor_y, 0);
   press(a, '\t');
   ASSERT_EQ(app_focused(a), FOCUS_TREE);
   type(a, "jx");
   ASSERT_STREQ(line(a, 0), "QUERY .");
+  ASSERT_EQ(screen->cursor_x, -1);
   press(a, APP_KEY_BACKTAB);
   ASSERT_EQ(app_focused(a), FOCUS_QUERY);
   app_free(a);

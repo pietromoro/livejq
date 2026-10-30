@@ -5,7 +5,6 @@
 #include "grid.h"
 
 static u32 utf8_next(const u8* s, usz len, usz* i);
-static usz utf8_put(u32 c, char* out);
 
 grid* grid_new(i32 w, i32 h) {
   grid* g = malloc(sizeof(*g));
@@ -32,6 +31,8 @@ void grid_free(grid* g) {
 }
 
 void grid_clear(grid* g) {
+  g->cursor_x = -1;
+  g->cursor_y = -1;
   for (i32 y = 0; y < g->h; y++)
     grid_fill(g, y, STYLE_NORMAL);
 }
@@ -100,6 +101,32 @@ void grid_line(const grid* g, i32 y, char* buf, usz cap) {
   buf[keep] = '\0';
 }
 
+usz utf8_put(u32 c, char* out) {
+  if (c < 0x80) {
+    out[0] = (char)c;
+    return 1;
+  }
+
+  if (c < 0x800) {
+    out[0] = (char)(0xc0 | (c >> 6));
+    out[1] = (char)(0x80 | (c & 0x3f));
+    return 2;
+  }
+
+  if (c < 0x10000) {
+    out[0] = (char)(0xe0 | (c >> 12));
+    out[1] = (char)(0x80 | ((c >> 6) & 0x3f));
+    out[2] = (char)(0x80 | (c & 0x3f));
+    return 3;
+  }
+
+  out[0] = (char)(0xf0 | (c >> 18));
+  out[1] = (char)(0x80 | ((c >> 12) & 0x3f));
+  out[2] = (char)(0x80 | ((c >> 6) & 0x3f));
+  out[3] = (char)(0x80 | (c & 0x3f));
+  return 4;
+}
+
 static u32 utf8_next(const u8* s, usz len, usz* i) {
   u32 c = s[(*i)++];
   i32 more;
@@ -125,30 +152,4 @@ static u32 utf8_next(const u8* s, usz len, usz* i) {
   }
 
   return c;
-}
-
-static usz utf8_put(u32 c, char* out) {
-  if (c < 0x80) {
-    out[0] = (char)c;
-    return 1;
-  }
-
-  if (c < 0x800) {
-    out[0] = (char)(0xc0 | (c >> 6));
-    out[1] = (char)(0x80 | (c & 0x3f));
-    return 2;
-  }
-
-  if (c < 0x10000) {
-    out[0] = (char)(0xe0 | (c >> 12));
-    out[1] = (char)(0x80 | ((c >> 6) & 0x3f));
-    out[2] = (char)(0x80 | (c & 0x3f));
-    return 3;
-  }
-
-  out[0] = (char)(0xf0 | (c >> 18));
-  out[1] = (char)(0x80 | ((c >> 12) & 0x3f));
-  out[2] = (char)(0x80 | ((c >> 6) & 0x3f));
-  out[3] = (char)(0x80 | (c & 0x3f));
-  return 4;
 }

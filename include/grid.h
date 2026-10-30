@@ -31,6 +31,8 @@ typedef struct {
   i32 w;
   i32 h;
   cell* cells;
+  i32 cursor_x; /* -1 when the terminal cursor is hidden */
+  i32 cursor_y;
 } grid;
 
 grid* grid_new(i32 w, i32 h);
@@ -46,5 +48,8 @@ i32 grid_puts(grid* g, i32 x, i32 y, const char* s, u8 st);
 cell grid_at(const grid* g, i32 x, i32 y);
 /* Row y as UTF-8 without trailing blanks. */
 void grid_line(const grid* g, i32 y, char* buf, usz cap);
+/* Writes c as UTF-8 into out, which has room for 4 bytes. Returns the byte
+ * count. */
+usz utf8_put(u32 c, char* out);
 
 #endif /* LIVEJQ_GRID_H */

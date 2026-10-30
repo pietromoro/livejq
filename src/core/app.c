@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "app.h"
+#include "editor.h"
 #include "eval.h"
 #include "loader.h"
 #include "tree.h"
@@ -21,9 +22,7 @@ struct app {
   tree* tree;
   app_focus focus;
 
-  char* query;
-  usz qlen;
-  usz qcap;
+  editor query;
   b8 edited;      /* not submitted yet */
   i64 submit_at;  /* debounce deadline */
   u64 pending;    /* submitted id awaiting its result */
@@ -41,8 +40,6 @@ static void key(app* a, app_event ev);
 static void tree_key(app* a, u32 key);
 static void reload(app* a);
 static b8 edit(app* a, u32 key);
-static void query_insert(app* a, u32 c);
-static void query_backspace(app* a);
 static void submit(app* a);
 static void apply(app* a);
 static void render_status(app* a, grid* g);
@@ -85,7 +82,7 @@ app* app_new(const app_opts* opts, char* err, usz errlen) {
     eval_set_args(a->ev, opts->args);
   else jv_free(opts->args);
 
-  while (*q) query_insert(a, (u8)*q++);
+  editor_set(&a->query, q);
 
   submit(a);
   return a;
@@ -99,7 +96,7 @@ void app_free(app* a) {
   jv_free(a->outputs);
   jv_free(a->error);
   jv_free(a->load_error);
-  free(a->query);
+  editor_free(&a->query);
   free(a);
 }
 
@@ -127,9 +124,15 @@ b8 app_settle(app* a, i64 timeout_ms) {
 
 void app_render(app* a, grid* g) {
   i32 n = jv_array_length(jv_copy(a->outputs));
+  i32 x;
 
   grid_clear(g);
-  grid_put(g, grid_puts(g, 0, 0, "QUERY ", STYLE_LABEL), 0, g->w, a->query, a->qlen, STYLE_NORMAL);
+  x = grid_puts(g, 0, 0, "QUERY ", STYLE_LABEL);
+  x = editor_render(&a->query, g, x, 0, g->w, STYLE_NORMAL);
+  if (a->focus == FOCUS_QUERY) {
+    g->cursor_x = x;
+    g->cursor_y = 0;
+  }
 
   if (a->has_result && n == 0 && jv_get_kind(a->error) == JV_KIND_NULL)
     grid_puts(g, 0, 1, "(no output)", STYLE_EMPTY);
@@ -220,62 +223,34 @@ static void reload(app* a) {
   submit(a);
 }
 
+/* true when the text changed. */
 static b8 edit(app* a, u32 key) {
-  if (key == APP_KEY_BACKSPACE) {
-    query_backspace(a);
-    return 1;
+  switch (key) {
+    case APP_KEY_BACKSPACE: return editor_backspace(&a->query);
+    case APP_KEY_LEFT:
+      editor_left(&a->query);
+      return 0;
+    case APP_KEY_RIGHT:
+      editor_right(&a->query);
+      return 0;
+    case APP_KEY_HOME:
+      editor_home(&a->query);
+      return 0;
+    case APP_KEY_END:
+      editor_end(&a->query);
+      return 0;
+    default: break;
   }
 
   if (key < 0x20 || key == 0x7f || key >= 0x110000) return 0;
 
-  query_insert(a, key);
+  editor_insert(&a->query, key);
   return 1;
-}
-
-static void query_insert(app* a, u32 c) {
-  char buf[4];
-  usz n;
-
-  if (c < 0x80) {
-    buf[0] = (char)c;
-    n = 1;
-  } else if (c < 0x800) {
-    buf[0] = (char)(0xc0 | (c >> 6));
-    buf[1] = (char)(0x80 | (c & 0x3f));
-    n = 2;
-  } else if (c < 0x10000) {
-    buf[0] = (char)(0xe0 | (c >> 12));
-    buf[1] = (char)(0x80 | ((c >> 6) & 0x3f));
-    buf[2] = (char)(0x80 | (c & 0x3f));
-    n = 3;
-  } else {
-    buf[0] = (char)(0xf0 | (c >> 18));
-    buf[1] = (char)(0x80 | ((c >> 12) & 0x3f));
-    buf[2] = (char)(0x80 | ((c >> 6) & 0x3f));
-    buf[3] = (char)(0x80 | (c & 0x3f));
-    n = 4;
-  }
-
-  if (a->qlen + n + 1 > a->qcap) {
-    a->qcap = (a->qlen + n + 1) * 2;
-    a->query = realloc(a->query, a->qcap);
-    if (!a->query) abort();
-  }
-
-  memcpy(a->query + a->qlen, buf, n);
-  a->qlen += n;
-  a->query[a->qlen] = '\0';
-}
-
-static void query_backspace(app* a) {
-  while (a->qlen > 0 && ((u8)a->query[--a->qlen] & 0xc0) == 0x80) {}
-
-  if (a->query) a->query[a->qlen] = '\0';
 }
 
 static void submit(app* a) {
   a->edited = 0;
-  a->pending = eval_submit(a->ev, a->query ? a->query : "", a->cap);
+  a->pending = eval_submit(a->ev, a->query.text ? a->query.text : "", a->cap);
 }
 
 static void apply(app* a) {

@@ -11,12 +11,14 @@
 
 #define TICK_MS    30
 #define KEY_CTRL_C 3
+#define CURSOR_BAR 4 /* PDCursesMod's caret, where 1 is an underline */
 
 static void init_colors(void);
 static b8 translate(i32 kind, wint_t ch, u32* key);
 static void blit(const grid* g);
 
 static attr_t style_attrs[STYLE_COUNT];
+static i32 cursor_shown = -1; /* curs_set rewrites the cursor shape on each call */
 
 /* PDCursesMod's vt port switches screens with ?47, which some terminals
  * ignore, and on endwin moves the cursor to the bottom row and forces a
@@ -57,7 +59,6 @@ i32 tui_run(const char* path) {
   raw();
   noecho();
   keypad(stdscr, TRUE);
-  curs_set(0);
   timeout(TICK_MS);
   init_colors();
   g = grid_new(COLS, LINES);
@@ -183,6 +184,13 @@ static void blit(const grid* g) {
       mvadd_wch(y, x, &cc);
     }
   }
+
+  if (cursor_shown != (g->cursor_x >= 0)) {
+    cursor_shown = g->cursor_x >= 0;
+    curs_set(cursor_shown ? CURSOR_BAR : 0);
+  }
+
+  if (g->cursor_x >= 0) move(g->cursor_y, g->cursor_x);
 
   refresh();
 }
