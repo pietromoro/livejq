@@ -1,0 +1,119 @@
+/* test helper - shared CHECK/ASSERT harness and generated test main.
+ *
+ * Include once at the top of each test file, after the project includes,
+ * so the macros below are available. Define every test as a static void
+ * function, then close the file with:
+ *
+ *   #define TESTS(f) \
+ *     f(test_one) \
+ *     f(test_two)
+ *   #define TEST_HELPER_MAIN
+ *   #include "test_helper.in"
+ *
+ * The second include expands TESTS into a registration table and defines
+ * main, which runs every registered function in order and prints a
+ * summary at the end.
+ */
+#include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "defines.h"
+
+#ifdef TEST_HELPER_MAIN
+
+typedef void (*test_fn)(void);
+
+typedef struct {
+  const char* name;
+  test_fn fn;
+} test_case;
+
+#define REGISTER(fn) { #fn, fn },
+static const test_case tests[] = {
+    TESTS(REGISTER)
+};
+#undef REGISTER
+
+int main(void) {
+  for (usz i = 0; i < ARRAY_LEN(tests); i++)
+    tests[i].fn();
+
+  if (failures == 0)
+    printf("all %zu checks passed\n", run_count);
+  else
+    printf("%zu checks, %zu failed\n", run_count, failures);
+
+  return failures == 0 ? 0 : 1;
+}
+
+#else
+
+static usz run_count;
+static usz failures;
+
+static void fail(const char* name, const char* fmt, ...) {
+  va_list ap;
+
+  failures++;
+  fprintf(stderr, "FAIL %s: ", name);
+  va_start(ap, fmt);
+  vfprintf(stderr, fmt, ap);
+  va_end(ap);
+  fputc('\n', stderr);
+}
+
+#define CHECK(cond) \
+  do { \
+    run_count++; \
+    if (!(cond)) fail(__func__, "%s", #cond); \
+  } while (0)
+
+#define FAIL(...) \
+  do { \
+    run_count++; \
+    fail(__func__, __VA_ARGS__); \
+  } while (0)
+
+#define ASSERT_EQ(actual, expected) \
+  do { \
+    long long got = (long long)(actual); \
+    long long want = (long long)(expected); \
+    run_count++; \
+    if (got != want) \
+      fail(__func__, "expected %lld, got %lld", want, got); \
+  } while (0)
+
+#define ASSERT_NE(actual, expected) \
+  do { \
+    long long got = (long long)(actual); \
+    long long other = (long long)(expected); \
+    run_count++; \
+    if (got == other) \
+      fail(__func__, "expected a different value than %lld", other); \
+  } while (0)
+
+#define ASSERT_STREQ(actual, expected) \
+  do { \
+    const char* got = (actual); \
+    const char* want = (expected); \
+    run_count++; \
+    if ((got == NULL) != (want == NULL) \
+      || (got && strcmp(got, want) != 0) \
+    ) fail(__func__, "expected %s, got %s", \
+      want ? want : "<NULL>", got ? got : "<NULL>"); \
+  } while (0)
+
+#define ASSERT_NULL(p) \
+  do { \
+    run_count++; \
+    if ((p) != NULL) fail(__func__, "expected NULL"); \
+  } while (0)
+
+#define ASSERT_NOT_NULL(p) \
+  do { \
+    run_count++; \
+    if ((p) == NULL) fail(__func__, "expected a non-NULL pointer"); \
+  } while (0)
+
+#endif /* TEST_HELPER_MAIN */
