@@ -16,6 +16,18 @@ pub fn build(b: *std.Build) void {
   const jq = vendor.jq(b, target, optimize, onig);
   const pdcurses = vendor.pdcurses(b, target, optimize);
 
+  const core_mod = b.createModule(.{
+    .target = target,
+    .optimize = optimize,
+    .link_libc = true,
+  });
+  core_mod.addIncludePath(b.path("include"));
+  core_mod.addCSourceFiles(.{ .root = b.path("src/core"), .files = cSources(b, "src/core"), .flags = c_flags });
+  core_mod.addCMacro("_POSIX_C_SOURCE", "200809L");
+  if (target.result.os.tag == .macos) core_mod.addCMacro("_DARWIN_C_SOURCE", "1");
+  core_mod.linkLibrary(jq);
+  const core = b.addLibrary(.{ .name = "livejq_core", .root_module = core_mod });
+
   const exe_mod = b.createModule(.{
     .target = target,
     .optimize = optimize,
@@ -25,6 +37,7 @@ pub fn build(b: *std.Build) void {
   exe_mod.addCSourceFiles(.{ .root = b.path("src"), .files = cSources(b, "src"), .flags = c_flags });
   for (vendor.pdc_macros) |m| exe_mod.addCMacro(m[0], m[1]);
   exe_mod.addCMacro("PDC_NCMOUSE", "1");
+  exe_mod.linkLibrary(core);
   exe_mod.linkLibrary(jq);
   exe_mod.linkLibrary(onig);
   exe_mod.linkLibrary(pdcurses);
@@ -49,6 +62,7 @@ pub fn build(b: *std.Build) void {
     mod.addIncludePath(b.path("include"));
     mod.addIncludePath(b.path("tests"));
     mod.addCSourceFile(.{ .file = b.path(b.fmt("tests/{s}", .{file})), .flags = c_flags });
+    mod.linkLibrary(core);
     mod.linkLibrary(jq);
     mod.linkLibrary(onig);
 
