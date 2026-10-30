@@ -1,0 +1,140 @@
+/* grid - a width by height array of styled code points. */
+#include <stdlib.h>
+#include <string.h>
+
+#include "grid.h"
+
+static u32 utf8_next(const u8* s, usz len, usz* i);
+static usz utf8_put(u32 c, char* out);
+
+grid* grid_new(i32 w, i32 h) {
+  grid* g = malloc(sizeof(*g));
+
+  if (!g) return NULL;
+
+  g->w = w;
+  g->h = h;
+  g->cells = malloc(sizeof(cell) * (usz)(w * h));
+  if (!g->cells) {
+    free(g);
+    return NULL;
+  }
+
+  grid_clear(g);
+  return g;
+}
+
+void grid_free(grid* g) {
+  if (!g) return;
+
+  free(g->cells);
+  free(g);
+}
+
+void grid_clear(grid* g) {
+  for (i32 y = 0; y < g->h; y++)
+    grid_fill(g, y, STYLE_NORMAL);
+}
+
+void grid_fill(grid* g, i32 y, u8 st) {
+  if (y < 0 || y >= g->h) return;
+
+  for (i32 x = 0; x < g->w; x++) {
+    g->cells[y * g->w + x].ch = ' ';
+    g->cells[y * g->w + x].style = st;
+  }
+}
+
+i32 grid_put(grid* g, i32 x, i32 y, i32 max_x, const char* s, usz len, u8 st) {
+  usz i = 0;
+
+  if (max_x > g->w) max_x = g->w;
+  if (y < 0 || y >= g->h) return x;
+
+  while (i < len && x < max_x) {
+    u32 c = utf8_next((const u8*)s, len, &i);
+
+    if (c < 0x20 || c == 0x7f) c = 0xfffd;
+    if (x >= 0) {
+      g->cells[y * g->w + x].ch = c;
+      g->cells[y * g->w + x].style = st;
+    }
+
+    x++;
+  }
+
+  return x;
+}
+
+i32 grid_puts(grid* g, i32 x, i32 y, const char* s, u8 st) {
+  return grid_put(g, x, y, g->w, s, strlen(s), st);
+}
+
+cell grid_at(const grid* g, i32 x, i32 y) { return g->cells[y * g->w + x]; }
+
+void grid_line(const grid* g, i32 y, char* buf, usz cap) {
+  usz n = 0;
+  usz keep = 0;
+
+  for (i32 x = 0; x < g->w && n + 4 < cap; x++) {
+    u32 c = g->cells[y * g->w + x].ch;
+
+    n += utf8_put(c, buf + n);
+    if (c != ' ') keep = n;
+  }
+
+  buf[keep] = '\0';
+}
+
+static u32 utf8_next(const u8* s, usz len, usz* i) {
+  u32 c = s[(*i)++];
+  i32 more;
+
+  if (c < 0x80) return c;
+
+  if ((c & 0xe0) == 0xc0) {
+    c &= 0x1f;
+    more = 1;
+  } else if ((c & 0xf0) == 0xe0) {
+    c &= 0x0f;
+    more = 2;
+  } else if ((c & 0xf8) == 0xf0) {
+    c &= 0x07;
+    more = 3;
+  } else
+    return 0xfffd;
+
+  while (more-- > 0) {
+    if (*i >= len || (s[*i] & 0xc0) != 0x80) return 0xfffd;
+
+    c = (c << 6) | (s[(*i)++] & 0x3f);
+  }
+
+  return c;
+}
+
+static usz utf8_put(u32 c, char* out) {
+  if (c < 0x80) {
+    out[0] = (char)c;
+    return 1;
+  }
+
+  if (c < 0x800) {
+    out[0] = (char)(0xc0 | (c >> 6));
+    out[1] = (char)(0x80 | (c & 0x3f));
+    return 2;
+  }
+
+  if (c < 0x10000) {
+    out[0] = (char)(0xe0 | (c >> 12));
+    out[1] = (char)(0x80 | ((c >> 6) & 0x3f));
+    out[2] = (char)(0x80 | (c & 0x3f));
+    return 3;
+  }
+
+  out[0] = (char)(0xf0 | (c >> 18));
+  out[1] = (char)(0x80 | ((c >> 12) & 0x3f));
+  out[2] = (char)(0x80 | ((c >> 6) & 0x3f));
+  out[3] = (char)(0x80 | (c & 0x3f));
+  return 4;
+}
