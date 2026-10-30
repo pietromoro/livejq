@@ -201,6 +201,10 @@ static void test_fold_and_unfold(void) {
   ASSERT_STREQ(line(a, 3), "    ok: true");
   press(a, ' ');
   ASSERT_STREQ(line(a, 3), "    " OPEN "0: {3}");
+  press(a, APP_KEY_ENTER);
+  ASSERT_STREQ(line(a, 3), "    ok: true");
+  press(a, APP_KEY_ENTER);
+  ASSERT_STREQ(line(a, 3), "    " OPEN "0: {3}");
 
   press(a, 'j');
   press(a, 'j');

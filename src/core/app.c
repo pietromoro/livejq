@@ -176,6 +176,7 @@ static void tree_key(app* a, u32 key) {
       tree_do(a->tree, TREE_UNFOLD);
       break;
     case ' ':
+    case APP_KEY_ENTER:
       tree_do(a->tree, TREE_TOGGLE);
       break;
     case 'H':

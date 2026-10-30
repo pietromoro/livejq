@@ -143,7 +143,13 @@ static b8 translate(i32 kind, wint_t ch, u32* key) {
       { KEY_END, APP_KEY_END },
       { KEY_BTAB, APP_KEY_BACKTAB },
       { KEY_BACKSPACE, APP_KEY_BACKSPACE },
+      { KEY_ENTER, APP_KEY_ENTER },
   };
+
+  if (kind == OK && (ch == '\r' || ch == '\n')) {
+    *key = APP_KEY_ENTER;
+    return 1;
+  }
 
   if (kind == OK) {
     *key = ch == 0x7f || ch == 0x08 ? APP_KEY_BACKSPACE : (u32)ch;

@@ -19,6 +19,7 @@ enum {
   APP_KEY_PAGE_DOWN,
   APP_KEY_HOME,
   APP_KEY_END,
+  APP_KEY_ENTER,
 };
 
 typedef enum {
