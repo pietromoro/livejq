@@ -9,6 +9,7 @@
 #define MIN_WATCH_SECS   0.001
 #define MAX_WATCH_SECS   1000000.0
 
+static b8 is(const char* s, const char* full, const char* abbr);
 static b8 option(i32 argc, char** argv, i32* i, cli_opts* opts, char* err, usz errlen);
 static const char* value(i32 argc, char** argv, i32* i, char* err, usz errlen);
 static b8 watch(i32 argc, char** argv, i32* i, cli_opts* opts, char* err, usz errlen);
@@ -21,17 +22,17 @@ const char cli_usage[] =
   "Runs a jq query live over a JSON file.\n"
   "\n"
   "options:\n"
-  "  --query TEXT         start with this query instead of .\n"
-  "  --watch [SECS]       reload the file when it changes, checked every SECS\n"
-  "                       seconds (default 1, fractions allowed)\n"
-  "  --query-folder PATH  list the .query files in PATH as saved queries\n"
-  "  --slurp              read all inputs into one array\n"
-  "  --raw-input          read each line of the file as a string\n"
-  "  --arg NAME VALUE     bind $NAME to the string VALUE\n"
-  "  --argjson NAME JSON  bind $NAME to the JSON value\n"
-  "  --help               show this help\n"
-  "  --version            show the livejq and jq versions\n"
-  "  --                   end of options, the next argument is the file\n";
+  "  -q, --query TEXT         start with this query instead of .\n"
+  "  -w, --watch [SECS]       reload the file when it changes, checked every\n"
+  "                           SECS seconds (default 1, fractions allowed)\n"
+  "  -d, --query-folder PATH  list the .query files in PATH as saved queries\n"
+  "  -s, --slurp              read all inputs into one array\n"
+  "  -R, --raw-input          read each line of the file as a string\n"
+  "      --arg NAME VALUE     bind $NAME to the string VALUE\n"
+  "      --argjson NAME JSON  bind $NAME to the JSON value\n"
+  "  -h, --help               show this help\n"
+  "  -V, --version            show the livejq and jq versions\n"
+  "      --                   end of options, the next argument is the file\n";
 
 cli_action cli_parse(i32 argc, char** argv, cli_opts* opts, char* err, usz errlen) {
   b8 options_done = 0;
@@ -56,8 +57,8 @@ cli_action cli_parse(i32 argc, char** argv, cli_opts* opts, char* err, usz errle
       continue;
     }
 
-    if (strcmp(s, "--help") == 0) return drop_args(opts, CLI_HELP);
-    if (strcmp(s, "--version") == 0) return drop_args(opts, CLI_VERSION);
+    if (is(s, "--help", "-h")) return drop_args(opts, CLI_HELP);
+    if (is(s, "--version", "-V")) return drop_args(opts, CLI_VERSION);
     if (!option(argc, argv, &i, opts, err, errlen)) return drop_args(opts, CLI_USAGE);
   }
 
@@ -73,23 +74,27 @@ void cli_version(char* buf, usz len) {
   snprintf(buf, len, "livejq %s\njq %s\n", LIVEJQ_VERSION, JQ_VERSION);
 }
 
+static b8 is(const char* s, const char* full, const char* abbr) {
+  return strcmp(s, full) == 0 || strcmp(s, abbr) == 0;
+}
+
 static b8 option(i32 argc, char** argv, i32* i, cli_opts* opts, char* err, usz errlen) {
   const char* s = argv[*i];
 
-  if (strcmp(s, "--slurp") == 0) {
+  if (is(s, "--slurp", "-s")) {
     opts->app.slurp = 1;
     return 1;
   }
 
-  if (strcmp(s, "--raw-input") == 0) {
+  if (is(s, "--raw-input", "-R")) {
     opts->app.raw = 1;
     return 1;
   }
 
-  if (strcmp(s, "--query") == 0) return (opts->app.query = value(argc, argv, i, err, errlen)) != NULL;
-  if (strcmp(s, "--query-folder") == 0)
+  if (is(s, "--query", "-q")) return (opts->app.query = value(argc, argv, i, err, errlen)) != NULL;
+  if (is(s, "--query-folder", "-d"))
     return (opts->query_folder = value(argc, argv, i, err, errlen)) != NULL;
-  if (strcmp(s, "--watch") == 0) return watch(argc, argv, i, opts, err, errlen);
+  if (is(s, "--watch", "-w")) return watch(argc, argv, i, opts, err, errlen);
   if (strcmp(s, "--arg") == 0 || strcmp(s, "--argjson") == 0) return bind_arg(argc, argv, i, opts, err, errlen);
 
   snprintf(err, errlen, "unknown option %s", s);

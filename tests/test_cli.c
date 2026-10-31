@@ -19,6 +19,7 @@ static void test_watch_malformed(void);
 static void test_args(void);
 static void test_argjson_malformed(void);
 static void test_end_of_options(void);
+static void test_short_forms(void);
 
 static char err[256];
 
@@ -69,7 +70,8 @@ static void test_unknown_option(void) {
 
   ASSERT_EQ(parse(&o, "--nope", "a.json", NULL), CLI_USAGE);
   CHECK(strstr(err, "--nope") != NULL);
-  ASSERT_EQ(parse(&o, "-s", "a.json", NULL), CLI_USAGE);
+  ASSERT_EQ(parse(&o, "-x", "a.json", NULL), CLI_USAGE);
+  CHECK(strstr(err, "-x") != NULL);
 }
 
 static void test_help_and_version(void) {
@@ -164,6 +166,27 @@ static void test_end_of_options(void) {
   jv_free(o.app.args);
 }
 
+static void test_short_forms(void) {
+  cli_opts o;
+
+  ASSERT_EQ(parse(&o, "-h", NULL), CLI_HELP);
+  ASSERT_EQ(parse(&o, "-V", NULL), CLI_VERSION);
+  ASSERT_EQ(
+    parse(&o, "-s", "-R", "-q", ".a", "-d", "q", "-w", "0.5", "a.json", NULL),
+    CLI_RUN
+  );
+  CHECK(o.app.slurp && o.app.raw);
+  CHECK(strcmp(o.app.query, ".a") == 0);
+  CHECK(strcmp(o.query_folder, "q") == 0);
+  ASSERT_EQ(o.watch_ms, 500);
+  CHECK(strcmp(o.app.path, "a.json") == 0);
+  jv_free(o.app.args);
+
+  ASSERT_EQ(parse(&o, "a.json", "-q", NULL), CLI_USAGE);
+  CHECK(strstr(err, "-q needs a value") != NULL);
+  ASSERT_EQ(parse(&o, "-sR", "a.json", NULL), CLI_USAGE);
+}
+
 #define TESTS(f)              \
   f(test_file_only)           \
   f(test_file_required)       \
@@ -176,7 +199,8 @@ static void test_end_of_options(void) {
   f(test_watch_malformed)     \
   f(test_args)                \
   f(test_argjson_malformed)   \
-  f(test_end_of_options)
+  f(test_end_of_options)      \
+  f(test_short_forms)
 
 #define TEST_HELPER_MAIN
 
