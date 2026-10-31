@@ -204,6 +204,7 @@ static void test_compile_error_keeps_last_good(void) {
   ASSERT_STREQ(query(a), ".ok | [");
   ASSERT_STREQ(row(a, 0), "  #0 true");
   ASSERT_EQ(style_at(a, LEFT + 5, TOP), STYLE_DIM);
+  ASSERT_EQ(style_at(a, 0, 0), STYLE_BORDER_ERROR);
   CHECK(strstr(line(a, H - 2), "syntax error") != NULL);
 
   retype(a, ".ok");
@@ -224,6 +225,7 @@ static void test_runtime_error_keeps_partial_outputs(void) {
   CHECK(strstr(line(a, H - 2), "2 outputs") != NULL);
   CHECK(strstr(line(a, H - 2), "boom") != NULL);
   ASSERT_EQ(style_at(a, 1, H - 2), STYLE_PILL_ERROR);
+  ASSERT_EQ(style_at(a, 0, 0), STYLE_BORDER_FOCUS);
   app_free(a);
 }
 

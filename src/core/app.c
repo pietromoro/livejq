@@ -366,9 +366,11 @@ static b8 failed(const app* a) {
   return jv_get_kind(a->error) == JV_KIND_STRING || jv_get_kind(a->load_error) == JV_KIND_STRING;
 }
 
-/* the box takes the accent while the query has focus, red on an error. */
+/* the box takes the accent while the query has focus, and turns red when
+ * the query does not compile. a runtime error comes from the data, not from
+ * the query. */
 static void render_query(app* a, grid* g) {
-  u8 border = failed(a) ? STYLE_BORDER_ERROR : a->focus == FOCUS_QUERY ? STYLE_BORDER_FOCUS : STYLE_BORDER;
+  u8 border = a->stale ? STYLE_BORDER_ERROR : a->focus == FOCUS_QUERY ? STYLE_BORDER_FOCUS : STYLE_BORDER;
   u8* styles = malloc(a->query.len + 1);
   i32 x;
 
