@@ -7,6 +7,7 @@
 #include <curses.h>
 
 #include "app.h"
+#include "guard.h"
 #include "thread.h"
 #include "tui.h"
 
@@ -25,6 +26,7 @@ static i32 cursor_shown = -1; /* curs_set rewrites the cursor shape on each call
  * ignore, and on endwin moves the cursor to the bottom row and forces a
  * block cursor. ?1049 around it saves and restores the cursor and screen. */
 void tui_enter(void) {
+  guard_arm();
 #ifndef _WIN32
   fputs("\033[?1049h", stdout);
   fflush(stdout);
@@ -38,6 +40,7 @@ void tui_leave(void) {
   fputs("\033[?1049l\033[0 q", stdout);
   fflush(stdout);
 #endif
+  guard_disarm();
 }
 
 i32 tui_run(const app_opts* opts) {
