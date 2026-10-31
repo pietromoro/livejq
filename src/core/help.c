@@ -31,6 +31,7 @@ static const entry tree_keys[] = {
     { "g G  home end", "top / bottom" },
     { "pgup pgdn", "page" },
     { "v V", "next / previous view" },
+    { "x o b e", "hex / octal / binary / exponent, again: back" },
     { "0", "value as jq prints it" },
     { "tab", "query" },
     { "? F1", "help" },

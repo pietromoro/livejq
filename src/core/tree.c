@@ -4,7 +4,6 @@
 #include <string.h>
 
 #include "tree.h"
-#include "views.h"
 
 #define EXPAND_LIMIT 1000
 #define MARK_OPEN    "\xe2\x96\xbe "
@@ -83,6 +82,7 @@ static void remember_cursor(tree* t);
 static void row_key(tree* t, i32 r);
 static void key_segment(strbuf* b, jv key, i32 depth);
 static void cycle_view(tree* t, i32 step);
+static void set_view(tree* t, view_id id);
 static node* node_find(tree* t, const char* key);
 static node* node_at(tree* t, const char* key);
 static void fold_set(tree* t, const char* key, b8 open);
@@ -190,6 +190,22 @@ void tree_do(tree* t, tree_op op) {
   if (t->top < 0) t->top = 0;
 
   remember_cursor(t);
+}
+
+void tree_view(tree* t, view_id id) {
+  jv text;
+
+  if (t->nrows == 0) return;
+
+  if (t->rows[t->cursor].view == id) {
+    set_view(t, VIEW_DEFAULT);
+    return;
+  }
+
+  text = view_text(t->rows[t->cursor].value, id);
+  if (jv_is_valid(text)) set_view(t, id);
+
+  jv_free(text);
 }
 
 b8 tree_scroll(tree* t, i32 n) {
@@ -474,18 +490,21 @@ static void key_segment(strbuf* b, jv key, i32 depth) {
 
 /* the step-th view after the cursor's, or the default one for 0. */
 static void cycle_view(tree* t, i32 step) {
-  row* w = &t->rows[t->cursor];
   view_id ids[VIEW_COUNT];
-  i32 n = views_of(w->value, ids, VIEW_COUNT);
+  i32 n = views_of(t->rows[t->cursor].value, ids, VIEW_COUNT);
   i32 at = 0;
 
   for (i32 i = 0; i < n; i++)
-    if (ids[i] == w->view) at = i;
+    if (ids[i] == t->rows[t->cursor].view) at = i;
 
   at = step == 0 ? 0 : (at + step + n) % n;
-  w->view = ids[at];
+  set_view(t, ids[at]);
+}
+
+static void set_view(tree* t, view_id id) {
+  t->rows[t->cursor].view = id;
   row_key(t, t->cursor);
-  node_at(t, t->key.s)->view = w->view;
+  node_at(t, t->key.s)->view = id;
 }
 
 static node* node_find(tree* t, const char* key) {

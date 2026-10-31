@@ -6,6 +6,7 @@
 
 #include "defines.h"
 #include "grid.h"
+#include "views.h"
 
 typedef enum {
   TREE_UP = 0,
@@ -32,6 +33,9 @@ void tree_free(tree* t);
  * cursor by path. */
 void tree_set(tree* t, jv outputs);
 void tree_do(tree* t, tree_op op);
+/* Shows the cursor's value in view id, or as jq prints it when it is in
+ * that view already. Nothing happens when the view does not apply. */
+void tree_view(tree* t, view_id id);
 /* Moves the view by n rows, dragging the cursor along only to keep it in
  * view. False when the view was already at that end. */
 b8 tree_scroll(tree* t, i32 n);

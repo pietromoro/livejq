@@ -50,6 +50,7 @@ static void test_truncation(void);
 static void test_path_quoting(void);
 static void test_view_cycling(void);
 static void test_view_kept_by_path(void);
+static void test_view_keys(void);
 
 static grid* screen;
 
@@ -661,6 +662,35 @@ static void test_view_kept_by_path(void) {
   app_free(a);
 }
 
+static void test_view_keys(void) {
+  app* a = open_app("tests/data/sample.json", ".users[0]");
+
+  if (!a) return;
+
+  press(a, '\t');
+  type(a, "jjjx");
+  ASSERT_STREQ(row(a, 3), "    ts: 0x67224860  hex");
+  press(a, 'b');
+  ASSERT_STREQ(row(a, 3), "    ts: 0b1100111001000100100100001100000  bin");
+  press(a, 'b');
+  ASSERT_STREQ(row(a, 3), "    ts: 1730300000");
+  press(a, 'o');
+  press(a, 'e');
+  ASSERT_STREQ(row(a, 3), "    ts: 1.7303e9  exp");
+  press(a, '0');
+  ASSERT_STREQ(row(a, 3), "    ts: 1730300000");
+
+  retype(a, "{a: 1.5}");
+  press(a, 'j');
+  press(a, 'x');
+  ASSERT_STREQ(row(a, 1), "    a: 1.5");
+  press(a, 'e');
+  ASSERT_STREQ(row(a, 1), "    a: 1.5e0  exp");
+  press(a, 'x');
+  ASSERT_STREQ(row(a, 1), "    a: 1.5e0  exp");
+  app_free(a);
+}
+
 #define TESTS(f)                          \
   f(test_focus)                           \
   f(test_click_focuses)                   \
@@ -679,7 +709,8 @@ static void test_view_kept_by_path(void) {
   f(test_truncation)                      \
   f(test_path_quoting)                    \
   f(test_view_cycling)                    \
-  f(test_view_kept_by_path)
+  f(test_view_kept_by_path)               \
+  f(test_view_keys)
 
 #define TEST_HELPER_MAIN
 
