@@ -1,10 +1,9 @@
-/* help - a box over the screen with the keys of the focused zone. */
+/* help - the keys of the focused zone, in a box or on one line. */
 #include <string.h>
 
 #include "help.h"
 
-#define H_LINE "\xe2\x94\x80"
-#define V_LINE "\xe2\x94\x82"
+#define SEP    " \xe2\x80\xa2 "
 #define FOOTER "any key closes"
 
 typedef struct {
@@ -14,35 +13,51 @@ typedef struct {
 
 static const entry query_keys[] = {
     { "\xe2\x86\x90 \xe2\x86\x92", "move" },
-    { "Ctrl-\xe2\x86\x90 \xe2\x86\x92  Alt-b f", "move by word" },
-    { "Home End  Ctrl-A E", "start / end" },
-    { "Backspace Delete", "delete" },
-    { "Ctrl-W  Alt-Backspace", "delete word" },
-    { "Ctrl-U  Ctrl-K", "delete to start / end" },
-    { "Tab", "tree" },
+    { "ctrl-\xe2\x86\x90 \xe2\x86\x92  alt-b f", "move by word" },
+    { "home end  ctrl-a e", "start / end" },
+    { "backspace delete", "delete" },
+    { "ctrl-w  alt-backspace", "delete word" },
+    { "ctrl-u  ctrl-k", "delete to start / end" },
+    { "tab", "tree" },
     { "F1", "help" },
-    { "Ctrl-C", "quit" },
+    { "ctrl-c", "quit" },
 };
 
 static const entry tree_keys[] = {
     { "j k  \xe2\x86\x93 \xe2\x86\x91", "move" },
     { "h l  \xe2\x86\x90 \xe2\x86\x92", "fold / unfold, \xe2\x86\x90 on a leaf: parent" },
-    { "Space Enter", "toggle" },
+    { "space enter", "toggle" },
     { "H L", "fold / unfold subtree" },
-    { "g G  Home End", "top / bottom" },
-    { "PgUp PgDn", "page" },
-    { "Tab", "query" },
+    { "g G  home end", "top / bottom" },
+    { "pgup pgdn", "page" },
+    { "tab", "query" },
     { "? F1", "help" },
-    { "q  Ctrl-C", "quit" },
+    { "q  ctrl-c", "quit" },
+};
+
+static const entry query_bar[] = {
+    { "\xe2\x86\x90\xe2\x86\x92", "move" },
+    { "ctrl-w", "delete word" },
+    { "tab", "tree" },
+    { "F1", "help" },
+    { "ctrl-c", "quit" },
+};
+
+static const entry tree_bar[] = {
+    { "\xe2\x86\x91\xe2\x86\x93", "move" },
+    { "\xe2\x86\x90\xe2\x86\x92", "fold" },
+    { "space", "toggle" },
+    { "tab", "query" },
+    { "?", "help" },
+    { "q", "quit" },
 };
 
 static i32 columns(const char* s);
-static void border(grid* g, i32 x, i32 y, i32 w, const char* left, const char* right, const char* title);
-static void row(grid* g, i32 x, i32 y, i32 w);
 
 void help_render(grid* g, app_focus focus) {
   const entry* keys = focus == FOCUS_TREE ? tree_keys : query_keys;
   usz n = focus == FOCUS_TREE ? ARRAY_LEN(tree_keys) : ARRAY_LEN(query_keys);
+  const char* title = focus == FOCUS_TREE ? " tree keys " : " query keys ";
   i32 key_w = 0;
   i32 what_w = columns(FOOTER);
   i32 w;
@@ -61,44 +76,39 @@ void help_render(grid* g, app_focus focus) {
 
   x = (g->w - w) / 2;
   y = (g->h - h) / 2;
-  border(g, x, y, w, "\xe2\x94\x8c", "\xe2\x94\x90", focus == FOCUS_TREE ? " tree keys " : " query keys ");
+  for (i32 i = 1; i < h - 1; i++) grid_fill_span(g, x + 1, x + w - 1, y + i, STYLE_NORMAL);
+
+  grid_box(g, x, y, w, h, STYLE_BORDER_FOCUS);
+  grid_put_fit(g, x + 2, y, x + w - 1, title, strlen(title), STYLE_PILL);
   for (usz i = 0; i < n && (i32)i + 1 < h - 1; i++) {
     i32 at = x + 2;
 
-    row(g, x, y + 1 + (i32)i, w);
-    grid_put_fit(g, at, y + 1 + (i32)i, x + w - 1, keys[i].keys, strlen(keys[i].keys), STYLE_KEY);
+    grid_put_fit(g, at, y + 1 + (i32)i, x + w - 1, keys[i].keys, strlen(keys[i].keys), STYLE_ACCENT);
     at += key_w + 3;
     grid_put_fit(g, at, y + 1 + (i32)i, x + w - 1, keys[i].what, strlen(keys[i].what), STYLE_NORMAL);
   }
 
-  if (h == (i32)n + 4) {
-    row(g, x, y + h - 3, w);
-    row(g, x, y + h - 2, w);
-    grid_put_fit(g, x + 2, y + h - 2, x + w - 1, FOOTER, strlen(FOOTER), STYLE_DIM);
-  }
+  if (h == (i32)n + 4) grid_put_fit(g, x + 2, y + h - 2, x + w - 1, FOOTER, strlen(FOOTER), STYLE_HELP);
+}
 
-  border(g, x, y + h - 1, w, "\xe2\x94\x94", "\xe2\x94\x98", NULL);
+void help_bar(grid* g, i32 y, app_focus focus) {
+  const entry* keys = focus == FOCUS_TREE ? tree_bar : query_bar;
+  usz n = focus == FOCUS_TREE ? ARRAY_LEN(tree_bar) : ARRAY_LEN(query_bar);
+  i32 x = 1;
+
+  for (usz i = 0; i < n; i++) {
+    i32 sep = i ? columns(SEP) : 0;
+
+    if (x + sep + columns(keys[i].keys) + 1 + columns(keys[i].what) >= g->w) return;
+
+    if (i) x = grid_puts(g, x, y, SEP, STYLE_HELP_SEP);
+    x = grid_puts(g, x, y, keys[i].keys, STYLE_HELP_KEY);
+    x = grid_puts(g, x + 1, y, keys[i].what, STYLE_HELP);
+  }
 }
 
 static i32 columns(const char* s) {
-  i32 n = 0;
+  usz len = strlen(s);
 
-  for (; *s; s++) n += ((u8)*s & 0xc0) != 0x80;
-
-  return n;
-}
-
-static void border(grid* g, i32 x, i32 y, i32 w, const char* left, const char* right, const char* title) {
-  grid_put(g, x, y, x + w, left, strlen(left), STYLE_PUNCT);
-  for (i32 i = 1; i < w - 1; i++) grid_put(g, x + i, y, x + w, H_LINE, strlen(H_LINE), STYLE_PUNCT);
-
-  grid_put(g, x + w - 1, y, x + w, right, strlen(right), STYLE_PUNCT);
-  if (title) grid_put_fit(g, x + 2, y, x + w - 1, title, strlen(title), STYLE_LABEL);
-}
-
-static void row(grid* g, i32 x, i32 y, i32 w) {
-  grid_put(g, x, y, x + w, V_LINE, strlen(V_LINE), STYLE_PUNCT);
-  for (i32 i = 1; i < w - 1; i++) grid_put(g, x + i, y, x + w, " ", 1, STYLE_NORMAL);
-
-  grid_put(g, x + w - 1, y, x + w, V_LINE, strlen(V_LINE), STYLE_PUNCT);
+  return utf8_columns(s, len);
 }

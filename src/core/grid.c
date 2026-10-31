@@ -4,6 +4,9 @@
 
 #include "grid.h"
 
+#define H_LINE "\xe2\x94\x80"
+#define V_LINE "\xe2\x94\x82"
+
 static u32 utf8_next(const u8* s, usz len, usz* i);
 
 grid* grid_new(i32 w, i32 h) {
@@ -37,13 +40,38 @@ void grid_clear(grid* g) {
     grid_fill(g, y, STYLE_NORMAL);
 }
 
-void grid_fill(grid* g, i32 y, u8 st) {
+void grid_fill(grid* g, i32 y, u8 st) { grid_fill_span(g, 0, g->w, y, st); }
+
+void grid_fill_span(grid* g, i32 x, i32 max_x, i32 y, u8 st) {
   if (y < 0 || y >= g->h) return;
 
-  for (i32 x = 0; x < g->w; x++) {
+  if (x < 0) x = 0;
+  if (max_x > g->w) max_x = g->w;
+  for (; x < max_x; x++) {
     g->cells[y * g->w + x].ch = ' ';
     g->cells[y * g->w + x].style = st;
   }
+}
+
+void grid_box(grid* g, i32 x, i32 y, i32 w, i32 h, u8 st) {
+  if (w < 2 || h < 2) return;
+
+  static const char* const corners[] = { "\xe2\x95\xad", "\xe2\x95\xae", "\xe2\x95\xb0", "\xe2\x95\xaf" };
+
+  for (i32 i = 1; i < w - 1; i++) {
+    grid_put(g, x + i, y, x + w, H_LINE, 3, st);
+    grid_put(g, x + i, y + h - 1, x + w, H_LINE, 3, st);
+  }
+
+  for (i32 i = 1; i < h - 1; i++) {
+    grid_put(g, x, y + i, x + w, V_LINE, 3, st);
+    grid_put(g, x + w - 1, y + i, x + w, V_LINE, 3, st);
+  }
+
+  grid_put(g, x, y, x + w, corners[0], 3, st);
+  grid_put(g, x + w - 1, y, x + w, corners[1], 3, st);
+  grid_put(g, x, y + h - 1, x + w, corners[2], 3, st);
+  grid_put(g, x + w - 1, y + h - 1, x + w, corners[3], 3, st);
 }
 
 i32 grid_put(grid* g, i32 x, i32 y, i32 max_x, const char* s, usz len, u8 st) {
@@ -68,12 +96,10 @@ i32 grid_put(grid* g, i32 x, i32 y, i32 max_x, const char* s, usz len, u8 st) {
 }
 
 i32 grid_put_fit(grid* g, i32 x, i32 y, i32 max_x, const char* s, usz len, u8 st) {
-  i32 n = 0;
+  i32 n = utf8_columns(s, len);
 
   if (max_x > g->w) max_x = g->w;
   if (x >= max_x) return x;
-
-  for (usz i = 0; i < len; i++) n += ((u8)s[i] & 0xc0) != 0x80;
 
   if (x + n <= max_x) return grid_put(g, x, y, max_x, s, len, st);
 
@@ -83,6 +109,14 @@ i32 grid_put_fit(grid* g, i32 x, i32 y, i32 max_x, const char* s, usz len, u8 st
 
 i32 grid_puts(grid* g, i32 x, i32 y, const char* s, u8 st) {
   return grid_put(g, x, y, g->w, s, strlen(s), st);
+}
+
+i32 utf8_columns(const char* s, usz len) {
+  i32 n = 0;
+
+  for (usz i = 0; i < len; i++) n += ((u8)s[i] & 0xc0) != 0x80;
+
+  return n;
 }
 
 cell grid_at(const grid* g, i32 x, i32 y) { return g->cells[y * g->w + x]; }

@@ -72,7 +72,7 @@ static void test_help_in_tree(void) {
   press(a, 'j');
   CHECK(!shows(a, "tree keys"));
   ASSERT_EQ(app_focused(a), FOCUS_TREE);
-  CHECK(shows(a, "QUERY ."));
+  CHECK(shows(a, "\xe2\x9d\xaf ."));
   grid_free(screen);
   app_free(a);
 }
@@ -85,14 +85,14 @@ static void test_help_in_query(void) {
   screen = grid_new(W, H);
   press(a, '?');
   CHECK(!shows(a, "query keys"));
-  CHECK(shows(a, "QUERY .?"));
+  CHECK(shows(a, "\xe2\x9d\xaf .?"));
   press(a, APP_KEY_F1);
   CHECK(shows(a, "query keys"));
   CHECK(shows(a, "delete word"));
   press(a, 'x');
   CHECK(!shows(a, "query keys"));
-  CHECK(shows(a, "QUERY .?"));
-  ASSERT_EQ(screen->cursor_x, 8);
+  CHECK(shows(a, "\xe2\x9d\xaf .?"));
+  ASSERT_EQ(screen->cursor_x, 6);
   grid_free(screen);
   app_free(a);
 }

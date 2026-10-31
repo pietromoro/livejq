@@ -11,7 +11,11 @@
 #include "test_helper.in"
 
 #define W         60
-#define H         12
+#define H         16
+#define TOP       4 /* the tree's first row */
+#define LEFT      2 /* and column */
+#define ROWS      (H - TOP - 2)
+#define QUERY_X   4 /* the query's first column, after the prompt */
 #define SETTLE_MS 5000
 #define OPEN      "\xe2\x96\xbe "
 #define CLOSED    "\xe2\x96\xb8 "
@@ -23,8 +27,11 @@ static void type(app* a, const char* s);
 static void retype(app* a, const char* s);
 static void write_file(const char* path, const char* text);
 static const char* line(app* a, i32 y);
+static const char* cells(app* a, i32 x, i32 y, i32 max_x);
+static const char* row(app* a, i32 n);
+static const char* query(app* a);
 static const char* status(app* a);
-static b8 selected(app* a, i32 y);
+static b8 selected(app* a, i32 n);
 static void test_focus(void);
 static void test_click_focuses(void);
 static void test_click_picks_lines(void);
@@ -122,19 +129,56 @@ static const char* line(app* a, i32 y) {
   return buf;
 }
 
-/* the right side of the status line. */
-static const char* status(app* a) {
-  const char* s = line(a, H - 1);
-  const char* gap = strstr(s, "  ");
+/* row y from column x up to max_x, without trailing blanks. */
+static const char* cells(app* a, i32 x, i32 y, i32 max_x) {
+  static char buf[W * 4 + 1];
+  usz n = 0;
+  usz keep = 0;
 
-  while (gap && *gap == ' ') gap++;
+  line(a, y);
+  for (; x < max_x; x++) {
+    u32 c = grid_at(screen, x, y).ch;
 
-  return gap ? gap : "";
+    n += utf8_put(c, buf + n);
+    if (c != ' ') keep = n;
+  }
+
+  buf[keep] = '\0';
+  return buf;
 }
 
-static b8 selected(app* a, i32 y) {
-  line(a, y);
-  return (grid_at(screen, W - 1, y).style & STYLE_SELECTED) != 0;
+/* line n of the tree's view. */
+static const char* row(app* a, i32 n) {
+  i32 y = TOP + n;
+
+  return cells(a, LEFT, y, W);
+}
+
+static const char* query(app* a) {
+  i32 max_x = W - 1;
+
+  return cells(a, QUERY_X, 1, max_x);
+}
+
+/* the cursor's path on the status bar. */
+static const char* status(app* a) {
+  static char buf[W * 4 + 1];
+  usz n = 0;
+
+  line(a, H - 2);
+  for (i32 x = 0; x < W; x++) {
+    cell c = grid_at(screen, x, H - 2);
+
+    if (c.style == STYLE_STATUS_FAINT) n += utf8_put(c.ch, buf + n);
+  }
+
+  buf[n] = '\0';
+  return buf;
+}
+
+static b8 selected(app* a, i32 n) {
+  line(a, TOP + n);
+  return (grid_at(screen, LEFT - 1, TOP + n).style & STYLE_SELECTED) != 0;
 }
 
 static void test_focus(void) {
@@ -144,14 +188,14 @@ static void test_focus(void) {
 
   ASSERT_EQ(app_focused(a), FOCUS_QUERY);
   line(a, 0);
-  ASSERT_EQ(screen->cursor_x, 7);
-  ASSERT_EQ(screen->cursor_y, 0);
-  ASSERT_EQ(grid_at(screen, W - 1, 1).style, STYLE_NORMAL | STYLE_SELECTED_IDLE);
+  ASSERT_EQ(screen->cursor_x, 5);
+  ASSERT_EQ(screen->cursor_y, 1);
+  ASSERT_EQ(grid_at(screen, LEFT - 1, TOP).style, STYLE_GUTTER | STYLE_SELECTED_IDLE);
   press(a, '\t');
   ASSERT_EQ(app_focused(a), FOCUS_TREE);
-  CHECK(selected(a, 1));
+  CHECK(selected(a, 0));
   type(a, "jx");
-  ASSERT_STREQ(line(a, 0), "QUERY .");
+  ASSERT_STREQ(query(a), ".");
   ASSERT_EQ(screen->cursor_x, -1);
   press(a, APP_KEY_BACKTAB);
   ASSERT_EQ(app_focused(a), FOCUS_QUERY);
@@ -159,10 +203,12 @@ static void test_focus(void) {
   type(a, "[");
   press(a, APP_KEY_END);
   type(a, "]");
-  ASSERT_STREQ(line(a, 0), "QUERY [.]");
-  ASSERT_EQ(screen->cursor_x, 9);
+  ASSERT_STREQ(query(a), "[.]");
+  ASSERT_EQ(screen->cursor_x, 7);
   press(a, 'w' & 0x1f);
-  ASSERT_STREQ(line(a, 0), "QUERY");
+  ASSERT_STREQ(query(a), "a jq filter");
+  ASSERT_EQ(grid_at(screen, QUERY_X, 1).style, STYLE_EMPTY);
+  ASSERT_EQ(screen->cursor_x, QUERY_X);
   app_free(a);
 }
 
@@ -173,17 +219,17 @@ static void test_click_focuses(void) {
   if (!a) return;
 
   line(a, 0);
-  CHECK(mouse(a, APP_MOUSE_PRESS, 5, 3));
+  CHECK(mouse(a, APP_MOUSE_PRESS, LEFT + 5, TOP + 2));
   ASSERT_EQ(app_focused(a), FOCUS_TREE);
-  CHECK(!mouse(a, APP_MOUSE_PRESS, 5, H - 1));
+  CHECK(!mouse(a, APP_MOUSE_PRESS, 5, H - 2));
   ASSERT_EQ(app_focused(a), FOCUS_TREE);
-  CHECK(mouse(a, APP_MOUSE_PRESS, 20, 0));
+  CHECK(mouse(a, APP_MOUSE_PRESS, 20, 1));
   ASSERT_EQ(app_focused(a), FOCUS_QUERY);
   press(a, APP_KEY_F1);
-  CHECK(mouse(a, APP_MOUSE_PRESS, 5, 3));
+  CHECK(mouse(a, APP_MOUSE_PRESS, LEFT + 5, TOP + 2));
   ASSERT_EQ(app_focused(a), FOCUS_QUERY);
   line(a, 0);
-  ASSERT_EQ(screen->cursor_x, 7);
+  ASSERT_EQ(screen->cursor_x, 5);
   app_free(a);
 }
 
@@ -195,24 +241,24 @@ static void test_click_picks_lines(void) {
   if (!a) return;
 
   line(a, 0);
-  CHECK(mouse(a, APP_MOUSE_PRESS, 10, 4));
+  CHECK(mouse(a, APP_MOUSE_PRESS, LEFT + 10, TOP + 3));
   ASSERT_EQ(app_focused(a), FOCUS_TREE);
-  CHECK(selected(a, 4));
-  ASSERT_STREQ(status(a), "#0 .users[0].id");
-  mouse(a, APP_MOUSE_PRESS, 10, 4);
-  ASSERT_STREQ(line(a, 4), "        id: 1");
-
-  mouse(a, APP_MOUSE_PRESS, 4, 3);
   CHECK(selected(a, 3));
-  ASSERT_STREQ(line(a, 3), "    " CLOSED "0: {3}");
-  ASSERT_STREQ(line(a, 4), "    " OPEN "1: {3}");
-  mouse(a, APP_MOUSE_PRESS, 20, 3);
-  ASSERT_STREQ(line(a, 3), "    " OPEN "0: {3}");
+  ASSERT_STREQ(status(a), "#0 .users[0].id");
+  mouse(a, APP_MOUSE_PRESS, LEFT + 10, TOP + 3);
+  ASSERT_STREQ(row(a, 3), "        id: 1");
+
+  mouse(a, APP_MOUSE_PRESS, LEFT + 4, TOP + 2);
+  CHECK(selected(a, 2));
+  ASSERT_STREQ(row(a, 2), "    " CLOSED "0: {3}");
+  ASSERT_STREQ(row(a, 3), "    " OPEN "1: {3}");
+  mouse(a, APP_MOUSE_PRESS, LEFT + 20, TOP + 2);
+  ASSERT_STREQ(row(a, 2), "    " OPEN "0: {3}");
 
   press(a, '\t');
-  mouse(a, APP_MOUSE_PRESS, 20, 3);
+  mouse(a, APP_MOUSE_PRESS, LEFT + 20, TOP + 2);
   ASSERT_EQ(app_focused(a), FOCUS_TREE);
-  ASSERT_STREQ(line(a, 3), "    " OPEN "0: {3}");
+  ASSERT_STREQ(row(a, 2), "    " OPEN "0: {3}");
   app_free(a);
 
   a = open_app("tests/data/sample.json", "1");
@@ -220,7 +266,7 @@ static void test_click_picks_lines(void) {
 
   press(a, '\t');
   line(a, 0);
-  CHECK(!mouse(a, APP_MOUSE_PRESS, 5, 5));
+  CHECK(!mouse(a, APP_MOUSE_PRESS, LEFT + 5, TOP + 4));
   ASSERT_STREQ(status(a), "#0 .");
   app_free(a);
 }
@@ -232,27 +278,27 @@ static void test_wheel_scrolls(void) {
   if (!a) return;
 
   line(a, 0);
-  CHECK(mouse(a, APP_MOUSE_WHEEL_DOWN, 5, 4));
+  CHECK(mouse(a, APP_MOUSE_WHEEL_DOWN, LEFT + 5, TOP + 3));
   ASSERT_EQ(app_focused(a), FOCUS_QUERY);
-  ASSERT_STREQ(line(a, 1), "    2: 2");
+  ASSERT_STREQ(row(a, 0), "    2: 2");
   ASSERT_STREQ(status(a), ".[2]");
 
   press(a, '\t');
   for (i32 i = 0; i < 5; i++) press(a, 'j');
-  CHECK(mouse(a, APP_MOUSE_WHEEL_UP, 5, 4));
-  ASSERT_STREQ(line(a, 1), OPEN "[30]");
+  CHECK(mouse(a, APP_MOUSE_WHEEL_UP, LEFT + 5, TOP + 3));
+  ASSERT_STREQ(row(a, 0), OPEN "[30]");
   ASSERT_STREQ(status(a), ".[7]");
-  CHECK(!mouse(a, APP_MOUSE_WHEEL_UP, 5, 4));
+  CHECK(!mouse(a, APP_MOUSE_WHEEL_UP, LEFT + 5, TOP + 3));
 
-  for (i32 i = 0; i < 7; i++) CHECK(mouse(a, APP_MOUSE_WHEEL_DOWN, 5, 4));
-  CHECK(!mouse(a, APP_MOUSE_WHEEL_DOWN, 5, 4));
-  ASSERT_STREQ(line(a, H - 2), "    29: 29");
+  for (i32 i = 0; i < 7; i++) CHECK(mouse(a, APP_MOUSE_WHEEL_DOWN, LEFT + 5, TOP + 3));
+  CHECK(!mouse(a, APP_MOUSE_WHEEL_DOWN, LEFT + 5, TOP + 3));
+  ASSERT_STREQ(row(a, ROWS - 1), "    29: 29");
   ASSERT_STREQ(status(a), ".[20]");
 
-  CHECK(!mouse(a, APP_MOUSE_WHEEL_UP, 5, 0));
-  CHECK(!mouse(a, APP_MOUSE_WHEEL_UP, 5, H - 1));
+  CHECK(!mouse(a, APP_MOUSE_WHEEL_UP, 5, 1));
+  CHECK(!mouse(a, APP_MOUSE_WHEEL_UP, 5, H - 2));
   press(a, '?');
-  CHECK(!mouse(a, APP_MOUSE_WHEEL_UP, 5, 4));
+  CHECK(!mouse(a, APP_MOUSE_WHEEL_UP, LEFT + 5, TOP + 3));
   app_free(a);
 }
 
@@ -263,7 +309,7 @@ static void test_quit_keys(void) {
 
   type(a, "q");
   CHECK(!app_quitting(a));
-  ASSERT_STREQ(line(a, 0), "QUERY .q");
+  ASSERT_STREQ(query(a), ".q");
   press(a, '\t');
   press(a, '?');
   press(a, 'q');
@@ -287,21 +333,21 @@ static void test_navigation(void) {
   if (!a) return;
 
   press(a, '\t');
-  ASSERT_STREQ(line(a, 1), OPEN "#0 {2}");
-  ASSERT_STREQ(line(a, 2), "  " OPEN "users: [2]");
-  ASSERT_STREQ(line(a, 3), "    " OPEN "0: {3}");
-  ASSERT_STREQ(line(a, 4), "        id: 1");
-  ASSERT_STREQ(line(a, 5), "        name: \"alice\"");
-  CHECK(selected(a, 1));
+  ASSERT_STREQ(row(a, 0), OPEN "#0 {2}");
+  ASSERT_STREQ(row(a, 1), "  " OPEN "users: [2]");
+  ASSERT_STREQ(row(a, 2), "    " OPEN "0: {3}");
+  ASSERT_STREQ(row(a, 3), "        id: 1");
+  ASSERT_STREQ(row(a, 4), "        name: \"alice\"");
+  CHECK(selected(a, 0));
   ASSERT_STREQ(status(a), "#0 .");
 
   press(a, 'k');
-  CHECK(selected(a, 1));
+  CHECK(selected(a, 0));
   press(a, 'j');
   press(a, APP_KEY_DOWN);
   press(a, 'j');
-  CHECK(selected(a, 4));
-  CHECK(!selected(a, 1));
+  CHECK(selected(a, 3));
+  CHECK(!selected(a, 0));
   ASSERT_STREQ(status(a), "#0 .users[0].id");
 
   press(a, APP_KEY_UP);
@@ -309,13 +355,13 @@ static void test_navigation(void) {
 
   press(a, 'G');
   ASSERT_STREQ(status(a), "#1 .second");
-  ASSERT_STREQ(line(a, H - 2), "    second: null");
-  CHECK(selected(a, H - 2));
-  ASSERT_STREQ(line(a, H - 3), OPEN "#1 {1}");
+  ASSERT_STREQ(row(a, ROWS - 1), "    second: null");
+  CHECK(selected(a, ROWS - 1));
+  ASSERT_STREQ(row(a, ROWS - 2), OPEN "#1 {1}");
 
   press(a, APP_KEY_HOME);
-  ASSERT_STREQ(line(a, 1), OPEN "#0 {2}");
-  CHECK(selected(a, 1));
+  ASSERT_STREQ(row(a, 0), OPEN "#0 {2}");
+  CHECK(selected(a, 0));
   press(a, APP_KEY_END);
   ASSERT_STREQ(status(a), "#1 .second");
   press(a, 'g');
@@ -331,25 +377,25 @@ static void test_fold_and_unfold(void) {
   press(a, '\t');
   press(a, 'j');
   press(a, 'h');
-  ASSERT_STREQ(line(a, 2), "  " CLOSED "users: [2]");
-  ASSERT_STREQ(line(a, 3), "    ok: true");
-  CHECK(selected(a, 2));
+  ASSERT_STREQ(row(a, 1), "  " CLOSED "users: [2]");
+  ASSERT_STREQ(row(a, 2), "    ok: true");
+  CHECK(selected(a, 1));
 
   press(a, 'h');
   ASSERT_STREQ(status(a), "#0 .");
   press(a, 'j');
   press(a, APP_KEY_RIGHT);
-  ASSERT_STREQ(line(a, 2), "  " OPEN "users: [2]");
-  ASSERT_STREQ(line(a, 3), "    " OPEN "0: {3}");
+  ASSERT_STREQ(row(a, 1), "  " OPEN "users: [2]");
+  ASSERT_STREQ(row(a, 2), "    " OPEN "0: {3}");
 
   press(a, ' ');
-  ASSERT_STREQ(line(a, 3), "    ok: true");
+  ASSERT_STREQ(row(a, 2), "    ok: true");
   press(a, ' ');
-  ASSERT_STREQ(line(a, 3), "    " OPEN "0: {3}");
+  ASSERT_STREQ(row(a, 2), "    " OPEN "0: {3}");
   press(a, APP_KEY_ENTER);
-  ASSERT_STREQ(line(a, 3), "    ok: true");
+  ASSERT_STREQ(row(a, 2), "    ok: true");
   press(a, APP_KEY_ENTER);
-  ASSERT_STREQ(line(a, 3), "    " OPEN "0: {3}");
+  ASSERT_STREQ(row(a, 2), "    " OPEN "0: {3}");
 
   press(a, 'j');
   press(a, 'j');
@@ -369,23 +415,23 @@ static void test_fold_subtree(void) {
 
   press(a, '\t');
   press(a, 'H');
-  ASSERT_STREQ(line(a, 1), CLOSED "#0 {2}");
-  ASSERT_STREQ(line(a, 2), OPEN "#1 {1}");
+  ASSERT_STREQ(row(a, 0), CLOSED "#0 {2}");
+  ASSERT_STREQ(row(a, 1), OPEN "#1 {1}");
 
   press(a, 'l');
-  ASSERT_STREQ(line(a, 2), "  " CLOSED "users: [2]");
-  ASSERT_STREQ(line(a, 3), "    ok: true");
+  ASSERT_STREQ(row(a, 1), "  " CLOSED "users: [2]");
+  ASSERT_STREQ(row(a, 2), "    ok: true");
 
   press(a, 'L');
-  ASSERT_STREQ(line(a, 2), "  " OPEN "users: [2]");
-  ASSERT_STREQ(line(a, 3), "    " OPEN "0: {3}");
+  ASSERT_STREQ(row(a, 1), "  " OPEN "users: [2]");
+  ASSERT_STREQ(row(a, 2), "    " OPEN "0: {3}");
   ASSERT_STREQ(status(a), "#0 .");
 
   press(a, 'j');
   press(a, 'H');
   press(a, 'l');
-  ASSERT_STREQ(line(a, 3), "    " CLOSED "0: {3}");
-  ASSERT_STREQ(line(a, 4), "    " CLOSED "1: {3}");
+  ASSERT_STREQ(row(a, 2), "    " CLOSED "0: {3}");
+  ASSERT_STREQ(row(a, 3), "    " CLOSED "1: {3}");
   app_free(a);
 }
 
@@ -395,17 +441,17 @@ static void test_page_up_and_down(void) {
   if (!a) return;
 
   press(a, '\t');
-  ASSERT_STREQ(line(a, 1), OPEN "[30]");
+  ASSERT_STREQ(row(a, 0), OPEN "[30]");
   press(a, APP_KEY_PAGE_DOWN);
   ASSERT_STREQ(status(a), ".[9]");
-  ASSERT_STREQ(line(a, 1), "    9: 9");
-  CHECK(selected(a, 1));
+  ASSERT_STREQ(row(a, 0), "    9: 9");
+  CHECK(selected(a, 0));
 
   press(a, APP_KEY_PAGE_DOWN);
   press(a, APP_KEY_PAGE_DOWN);
   ASSERT_STREQ(status(a), ".[29]");
-  ASSERT_STREQ(line(a, H - 2), "    29: 29");
-  CHECK(selected(a, H - 2));
+  ASSERT_STREQ(row(a, ROWS - 1), "    29: 29");
+  CHECK(selected(a, ROWS - 1));
 
   press(a, APP_KEY_PAGE_DOWN);
   ASSERT_STREQ(status(a), ".[29]");
@@ -416,7 +462,7 @@ static void test_page_up_and_down(void) {
   press(a, APP_KEY_PAGE_UP);
   press(a, APP_KEY_PAGE_UP);
   ASSERT_STREQ(status(a), ".");
-  ASSERT_STREQ(line(a, 1), OPEN "[30]");
+  ASSERT_STREQ(row(a, 0), OPEN "[30]");
   app_free(a);
 }
 
@@ -433,10 +479,10 @@ static void test_query_edit_keeps_state(void) {
   ASSERT_STREQ(status(a), "#0 .users[1].name");
 
   retype(a, ". + {extra: 1}");
-  ASSERT_STREQ(line(a, 3), "    " CLOSED "0: {3}");
-  ASSERT_STREQ(line(a, 4), "    " OPEN "1: {3}");
+  ASSERT_STREQ(row(a, 2), "    " CLOSED "0: {3}");
+  ASSERT_STREQ(row(a, 3), "    " OPEN "1: {3}");
   ASSERT_STREQ(status(a), "#0 .users[1].name");
-  CHECK(selected(a, 6));
+  CHECK(selected(a, 5));
   app_free(a);
 }
 
@@ -480,17 +526,17 @@ static void test_reload_keeps_state(void) {
   ev.now_ms = 0;
   app_feed(a, ev);
   CHECK(app_settle(a, SETTLE_MS));
-  ASSERT_STREQ(line(a, 2), "  " CLOSED "a: {1}");
-  ASSERT_STREQ(line(a, 3), "  " OPEN "c: [3]");
+  ASSERT_STREQ(row(a, 1), "  " CLOSED "a: {1}");
+  ASSERT_STREQ(row(a, 2), "  " OPEN "c: [3]");
   ASSERT_STREQ(status(a), ".c[1]");
-  CHECK(selected(a, 5));
+  CHECK(selected(a, 4));
 
   remove(path);
   app_feed(a, ev);
   CHECK(app_settle(a, SETTLE_MS));
-  ASSERT_STREQ(line(a, 3), "  " OPEN "c: [3]");
-  line(a, H - 1);
-  ASSERT_EQ(grid_at(screen, W - 1, H - 1).style, STYLE_ERROR);
+  ASSERT_STREQ(row(a, 2), "  " OPEN "c: [3]");
+  line(a, H - 2);
+  ASSERT_EQ(grid_at(screen, 1, H - 2).style, STYLE_PILL_ERROR);
   app_free(a);
 }
 
@@ -499,17 +545,17 @@ static void test_default_expansion(void) {
 
   if (!a) return;
 
-  ASSERT_STREQ(line(a, 1), OPEN "{2}");
-  ASSERT_STREQ(line(a, 2), "  " CLOSED "a: [2000]");
-  ASSERT_STREQ(line(a, 3), "  " CLOSED "b: [1]");
+  ASSERT_STREQ(row(a, 0), OPEN "{2}");
+  ASSERT_STREQ(row(a, 1), "  " CLOSED "a: [2000]");
+  ASSERT_STREQ(row(a, 2), "  " CLOSED "b: [1]");
 
   press(a, '\t');
   retype(a, "select(.ok) | [range(600)], [range(600)]");
-  ASSERT_STREQ(line(a, 1), CLOSED "#0 [600]");
-  ASSERT_STREQ(line(a, 2), CLOSED "#1 [600]");
+  ASSERT_STREQ(row(a, 0), CLOSED "#0 [600]");
+  ASSERT_STREQ(row(a, 1), CLOSED "#1 [600]");
 
   retype(a, "select(.ok) | [range(5)]");
-  ASSERT_STREQ(line(a, 2), "    0: 0");
+  ASSERT_STREQ(row(a, 1), "    0: 0");
   app_free(a);
 }
 
@@ -518,10 +564,10 @@ static void test_single_root_unlabeled(void) {
 
   if (!a) return;
 
-  ASSERT_STREQ(line(a, 1), OPEN "{3}");
-  ASSERT_STREQ(line(a, 4), "  " OPEN "tags: [1]");
-  ASSERT_STREQ(line(a, 5), "      0: \"x\"");
-  CHECK(strstr(line(a, H - 1), "1 outputs") != NULL);
+  ASSERT_STREQ(row(a, 0), OPEN "{3}");
+  ASSERT_STREQ(row(a, 3), "  " OPEN "tags: [1]");
+  ASSERT_STREQ(row(a, 4), "      0: \"x\"");
+  CHECK(strstr(line(a, H - 2), "1 outputs") != NULL);
   app_free(a);
 }
 
@@ -533,15 +579,15 @@ static void test_truncation(void) {
   char buf[128];
 
   app_render(a, narrow);
-  grid_line(narrow, 2, buf, sizeof(buf));
-  ASSERT_STREQ(buf, "    name: \"a string\xe2\x80\xa6");
-  ASSERT_EQ(grid_at(narrow, 19, 2).style, STYLE_STRING);
+  grid_line(narrow, TOP + 1, buf, sizeof(buf));
+  ASSERT_STREQ(buf, "      name: \"a str\xe2\x80\xa6");
+  ASSERT_EQ(grid_at(narrow, 18, TOP + 1).style, STYLE_STRING);
   grid_free(narrow);
 
-  narrow = grid_new(7, H);
+  narrow = grid_new(9, H);
   app_render(a, narrow);
-  grid_line(narrow, 2, buf, sizeof(buf));
-  ASSERT_STREQ(buf, "    na\xe2\x80\xa6");
+  grid_line(narrow, TOP + 1, buf, sizeof(buf));
+  ASSERT_STREQ(buf, "      n\xe2\x80\xa6");
   grid_free(narrow);
   app_free(a);
 }

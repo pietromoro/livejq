@@ -20,7 +20,8 @@ static b8 translate_mouse(app_event* ev);
 static void blit(const grid* g);
 
 static attr_t style_attrs[STYLE_COUNT];
-static attr_t idle_attrs[STYLE_COUNT]; /* the cursor's line while the tree has no focus */
+static attr_t selected_attrs[STYLE_COUNT]; /* the cursor's line */
+static attr_t idle_attrs[STYLE_COUNT];     /* the same, while the tree has no focus */
 static i32 cursor_shown = -1; /* curs_set rewrites the cursor shape on each call */
 
 /* PDCursesMod's vt port switches screens with ?47, which some terminals
@@ -103,70 +104,96 @@ i32 tui_run(const app_opts* opts) {
   return 0;
 }
 
-/* jq's palette: gray null, green strings, bold punctuation and keys, which
- * the query shares. The cursor's line without focus gets a dark
- * background, or an underline with fewer than 16 colors. A color stands
- * in for dim, which would turn it into one the terminal does not theme.
- * NO_COLOR keeps the attributes only. */
+/* the values keep jq's colors from the terminal's own palette: gray null,
+ * green strings, bold punctuation and keys, which the query shares. the
+ * chrome is gruvbox: a yellow accent, aqua and red, and its grays, or
+ * their nearest basic colors below 256. the cursor's line gets a dark
+ * background while the tree has focus, reverse without colors. a color
+ * stands in for dim and reverse, and NO_COLOR keeps the attributes only. */
 static void init_colors(void) {
   static const struct {
     u8 style;
     i16 fg;
+    i16 bg;
+    i16 fg16;
+    i16 bg16;
     attr_t attrs;
   } spec[] = {
-      { STYLE_LABEL, COLOR_CYAN, A_BOLD },
-      { STYLE_ERROR, COLOR_RED, A_BOLD | A_REVERSE },
-      { STYLE_STRING, COLOR_GREEN, 0 },
-      { STYLE_KEY, COLOR_BLUE, A_BOLD },
-      { STYLE_NULL, 8, 0 },
-      { STYLE_VARIABLE, COLOR_MAGENTA, 0 },
-      { STYLE_KEYWORD, COLOR_YELLOW, A_BOLD },
-      { STYLE_BUILTIN, COLOR_CYAN, 0 },
-      { STYLE_OPERATOR, COLOR_YELLOW, 0 },
-      { STYLE_FORMAT, COLOR_MAGENTA, A_BOLD },
-      { STYLE_COMMENT, 8, 0 },
+      { STYLE_DIM, 241, -1, 8, -1, A_DIM },
+      { STYLE_EMPTY, 243, -1, 8, -1, A_DIM },
+      { STYLE_LABEL, 108, -1, COLOR_CYAN, -1, A_BOLD },
+      { STYLE_ACCENT, 214, -1, COLOR_YELLOW, -1, A_BOLD },
+      { STYLE_BORDER, 239, -1, 8, -1, A_DIM },
+      { STYLE_BORDER_FOCUS, 214, -1, COLOR_YELLOW, -1, A_BOLD },
+      { STYLE_BORDER_ERROR, 167, -1, COLOR_RED, -1, A_BOLD },
+      { STYLE_GUTTER, 214, -1, COLOR_YELLOW, -1, A_BOLD },
+      { STYLE_PILL, 235, 214, COLOR_BLACK, COLOR_YELLOW, A_BOLD | A_REVERSE },
+      { STYLE_PILL_ERROR, 235, 167, COLOR_BLACK, COLOR_RED, A_BOLD | A_REVERSE },
+      { STYLE_STATUS, 223, 237, -1, 8, A_REVERSE },
+      { STYLE_STATUS_FAINT, 245, 237, COLOR_WHITE, 8, A_REVERSE },
+      { STYLE_STATUS_INFO, 223, 239, COLOR_BLACK, COLOR_WHITE, A_REVERSE },
+      { STYLE_STATUS_TIME, 235, 108, COLOR_BLACK, COLOR_CYAN, A_REVERSE },
+      { STYLE_STATUS_ERROR, 167, 237, COLOR_RED, 8, A_BOLD | A_REVERSE },
+      { STYLE_ERROR, 235, 167, COLOR_BLACK, COLOR_RED, A_BOLD | A_REVERSE },
+      { STYLE_HELP_KEY, 246, -1, COLOR_WHITE, -1, 0 },
+      { STYLE_HELP, 241, -1, 8, -1, A_DIM },
+      { STYLE_HELP_SEP, 238, -1, 8, -1, A_DIM },
+      { STYLE_STRING, COLOR_GREEN, -1, COLOR_GREEN, -1, 0 },
+      { STYLE_KEY, COLOR_BLUE, -1, COLOR_BLUE, -1, A_BOLD },
+      { STYLE_PUNCT, -1, -1, -1, -1, A_BOLD },
+      { STYLE_NULL, 8, -1, 8, -1, A_DIM },
+      { STYLE_VARIABLE, COLOR_MAGENTA, -1, COLOR_MAGENTA, -1, 0 },
+      { STYLE_KEYWORD, COLOR_YELLOW, -1, COLOR_YELLOW, -1, A_BOLD },
+      { STYLE_BUILTIN, COLOR_CYAN, -1, COLOR_CYAN, -1, 0 },
+      { STYLE_OPERATOR, COLOR_YELLOW, -1, COLOR_YELLOW, -1, 0 },
+      { STYLE_FORMAT, COLOR_MAGENTA, -1, COLOR_MAGENTA, -1, A_BOLD },
+      { STYLE_COMMENT, 8, -1, 8, -1, A_DIM },
   };
   const char* no_color = getenv("NO_COLOR");
+  b8 rich;
   i16 fg[STYLE_COUNT];
+  i16 bg[STYLE_COUNT];
   i16 pair = 1;
-  i16 idle_bg;
+  i16 line_bg;
 
-  style_attrs[STYLE_DIM] = A_DIM;
-  style_attrs[STYLE_EMPTY] = A_DIM;
-  style_attrs[STYLE_STATUS] = A_REVERSE;
-  style_attrs[STYLE_PUNCT] = A_BOLD;
-  style_attrs[STYLE_NULL] = A_DIM;
-  style_attrs[STYLE_COMMENT] = A_DIM;
-  for (usz i = 0; i < ARRAY_LEN(spec); i++) style_attrs[spec[i].style] |= spec[i].attrs;
+  for (usz i = 0; i < ARRAY_LEN(spec); i++) style_attrs[spec[i].style] = spec[i].attrs;
 
   for (i32 s = 0; s < STYLE_COUNT; s++) {
-    idle_attrs[s] = style_attrs[s] | A_UNDERLINE;
-    fg[s] = -1;
+    selected_attrs[s] = style_attrs[s] | A_REVERSE;
+    idle_attrs[s] = style_attrs[s];
   }
 
-  if (!has_colors() || (no_color && *no_color)) return;
+  if (!has_colors() || (no_color && *no_color) || COLORS < 16) return;
 
   start_color();
   use_default_colors();
+  rich = COLORS >= 256;
+  line_bg = rich ? 237 : 8;
+  for (i32 s = 0; s < STYLE_COUNT; s++) fg[s] = bg[s] = -1;
+
   for (usz i = 0; i < ARRAY_LEN(spec); i++) {
-    if (spec[i].fg >= COLORS) continue;
+    u8 st = spec[i].style;
 
-    init_pair(pair, spec[i].fg, -1);
-    style_attrs[spec[i].style] = (style_attrs[spec[i].style] & ~A_DIM) | COLOR_PAIR(pair);
-    fg[spec[i].style] = spec[i].fg;
+    fg[st] = rich ? spec[i].fg : spec[i].fg16;
+    bg[st] = rich ? spec[i].bg : spec[i].bg16;
+    if (fg[st] < 0 && bg[st] < 0) continue;
+
+    init_pair(pair, fg[st], bg[st]);
+    style_attrs[st] = (style_attrs[st] & A_BOLD) | COLOR_PAIR(pair);
     pair++;
   }
 
-  if (COLORS < 16) return;
-
-  idle_bg = COLORS >= 256 ? 236 : 8;
   for (i32 s = 0; s < STYLE_COUNT; s++) {
-    if (fg[s] == idle_bg) continue;
+    idle_attrs[s] = style_attrs[s];
+    selected_attrs[s] = style_attrs[s];
+    if (bg[s] >= 0 || fg[s] == line_bg) continue;
 
-    init_pair(pair, fg[s], idle_bg);
-    idle_attrs[s] = (style_attrs[s] & ~A_COLOR) | COLOR_PAIR(pair);
+    init_pair(pair, fg[s], line_bg);
+    selected_attrs[s] = (style_attrs[s] & ~A_COLOR) | COLOR_PAIR(pair);
     pair++;
   }
+
+  idle_attrs[STYLE_GUTTER] = style_attrs[STYLE_HELP] & ~A_BOLD;
 }
 
 static b8 translate(i32 kind, wint_t ch, u32* key) {
@@ -237,12 +264,15 @@ static void blit(const grid* g) {
     for (i32 x = 0; x < g->w && x < COLS; x++) {
       cell c = grid_at(g, x, y);
       u8 st = c.style & ~(STYLE_SELECTED | STYLE_SELECTED_IDLE);
-      const attr_t* attrs = c.style & STYLE_SELECTED_IDLE ? idle_attrs : style_attrs;
-      attr_t at = st < STYLE_COUNT ? attrs[st] : 0;
+      const attr_t* attrs = style_attrs;
+      attr_t at;
       wchar_t wc[2];
       cchar_t cc;
 
-      if (c.style & STYLE_SELECTED) at |= A_REVERSE;
+      if (c.style & STYLE_SELECTED) attrs = selected_attrs;
+      else if (c.style & STYLE_SELECTED_IDLE) attrs = idle_attrs;
+
+      at = st < STYLE_COUNT ? attrs[st] : 0;
 
       wc[0] = sizeof(wchar_t) < 4 && c.ch > 0xffff ? 0xfffd : (wchar_t)c.ch;
       wc[1] = 0;

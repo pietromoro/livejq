@@ -8,6 +8,7 @@
 #define EXPAND_LIMIT 1000
 #define MARK_OPEN    "\xe2\x96\xbe "
 #define MARK_CLOSED  "\xe2\x96\xb8 "
+#define GUTTER       "\xe2\x94\x83"
 
 /* how far containers open when the path has no fold of its own. */
 typedef enum {
@@ -74,7 +75,7 @@ static void key_segment(strbuf* b, jv key, i32 depth);
 static fold* fold_find(tree* t, const char* key);
 static void fold_set(tree* t, const char* key, b8 open);
 static u32 hash(const char* s);
-static void render_row(tree* t, grid* g, i32 r, i32 y, u8 flag, b8 dim);
+static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag, b8 dim);
 static void path_display(tree* t, i32 r, strbuf* b);
 static b8 is_ident(const char* s);
 static u8 kind_style(jv v);
@@ -199,7 +200,7 @@ b8 tree_click(tree* t, i32 x, i32 n, b8 again) {
   return 1;
 }
 
-void tree_render(tree* t, grid* g, i32 y, i32 h, b8 dim, b8 focused) {
+void tree_render(tree* t, grid* g, i32 x, i32 y, i32 max_x, i32 h, b8 dim, b8 focused) {
   u8 selected = focused ? STYLE_SELECTED : STYLE_SELECTED_IDLE;
 
   if (h < 1) return;
@@ -214,8 +215,12 @@ void tree_render(tree* t, grid* g, i32 y, i32 h, b8 dim, b8 focused) {
     i32 r = t->top + i;
     u8 flag = r == t->cursor ? selected : 0;
 
-    grid_fill(g, y + i, STYLE_NORMAL | flag);
-    render_row(t, g, r, y + i, flag, dim);
+    if (flag) {
+      grid_fill_span(g, x - 1, max_x, y + i, STYLE_NORMAL | flag);
+      grid_put(g, x - 1, y + i, max_x, GUTTER, 3, STYLE_GUTTER | flag);
+    }
+
+    render_row(t, g, r, x, y + i, max_x, flag, dim);
   }
 }
 
@@ -497,28 +502,28 @@ static u32 hash(const char* s) {
   return h;
 }
 
-static void render_row(tree* t, grid* g, i32 r, i32 y, u8 flag, b8 dim) {
+static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag, b8 dim) {
   row* w = &t->rows[r];
   jv_kind kind = jv_get_kind(w->value);
-  i32 x = w->depth * 2;
   char buf[32];
   u8 punct = (dim ? STYLE_DIM : STYLE_PUNCT) | flag;
   jv text;
 
-  if (has_children(w->value)) grid_puts(g, x, y, w->open ? MARK_OPEN : MARK_CLOSED, punct);
+  x += w->depth * 2;
+  if (has_children(w->value)) grid_put(g, x, y, max_x, w->open ? MARK_OPEN : MARK_CLOSED, 4, punct);
 
   x += 2;
   if (w->parent < 0 && t->nroots > 1) {
     snprintf(buf, sizeof(buf), "#%d ", (i32)jv_number_value(w->key));
-    x = grid_put_fit(g, x, y, g->w, buf, strlen(buf), (dim ? STYLE_DIM : STYLE_LABEL) | flag);
+    x = grid_put_fit(g, x, y, max_x, buf, strlen(buf), (dim ? STYLE_DIM : STYLE_LABEL) | flag);
   } else if (w->parent >= 0 && jv_get_kind(w->key) == JV_KIND_STRING) {
     const char* k = jv_string_value(w->key);
 
-    x = grid_put_fit(g, x, y, g->w, k, strlen(k), (dim ? STYLE_DIM : STYLE_KEY) | flag);
-    x = grid_put_fit(g, x, y, g->w, ": ", 2, punct);
+    x = grid_put_fit(g, x, y, max_x, k, strlen(k), (dim ? STYLE_DIM : STYLE_KEY) | flag);
+    x = grid_put_fit(g, x, y, max_x, ": ", 2, punct);
   } else if (w->parent >= 0) {
     snprintf(buf, sizeof(buf), "%d: ", (i32)jv_number_value(w->key));
-    x = grid_put_fit(g, x, y, g->w, buf, strlen(buf), punct);
+    x = grid_put_fit(g, x, y, max_x, buf, strlen(buf), punct);
   }
 
   if (kind == JV_KIND_ARRAY || kind == JV_KIND_OBJECT) {
@@ -529,7 +534,7 @@ static void render_row(tree* t, grid* g, i32 r, i32 y, u8 flag, b8 dim) {
     if (kind == JV_KIND_ARRAY) snprintf(buf, sizeof(buf), n ? "[%d]" : "[]", n);
     else snprintf(buf, sizeof(buf), n ? "{%d}" : "{}", n);
 
-    grid_put_fit(g, x, y, g->w, buf, strlen(buf), punct);
+    grid_put_fit(g, x, y, max_x, buf, strlen(buf), punct);
     return;
   }
 
@@ -538,7 +543,7 @@ static void render_row(tree* t, grid* g, i32 r, i32 y, u8 flag, b8 dim) {
     g,
     x,
     y,
-    g->w,
+    max_x,
     jv_string_value(text),
     (usz)jv_string_length_bytes(jv_copy(text)),
     (dim ? STYLE_DIM : kind_style(w->value)) | flag
