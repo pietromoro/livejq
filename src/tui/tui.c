@@ -1,6 +1,7 @@
 /* tui - curses in, core events out, the core's grid drawn back. */
 #include <locale.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <curses.h>
@@ -95,7 +96,9 @@ i32 tui_run(const app_opts* opts) {
 
 /* jq's palette: gray null, green strings, bold punctuation and keys, which
  * the query shares. The cursor's line without focus gets a dark
- * background, or an underline with fewer than 16 colors. */
+ * background, or an underline with fewer than 16 colors. NO_COLOR keeps
+ * the attributes only; PDCursesMod shows A_BOLD as a brighter color unless
+ * told to use real bold. */
 static void init_colors(void) {
   static const struct {
     u8 style;
@@ -114,6 +117,7 @@ static void init_colors(void) {
       { STYLE_FORMAT, COLOR_MAGENTA, A_BOLD },
       { STYLE_COMMENT, 8, 0 },
   };
+  const char* no_color = getenv("NO_COLOR");
   i16 fg[STYLE_COUNT];
   i16 pair = 1;
   i16 idle_bg;
@@ -121,17 +125,20 @@ static void init_colors(void) {
   style_attrs[STYLE_DIM] = A_DIM;
   style_attrs[STYLE_EMPTY] = A_DIM;
   style_attrs[STYLE_STATUS] = A_REVERSE;
-  style_attrs[STYLE_ERROR] = A_BOLD | A_REVERSE;
   style_attrs[STYLE_PUNCT] = A_BOLD;
   style_attrs[STYLE_NULL] = A_DIM;
-  style_attrs[STYLE_KEYWORD] = A_BOLD;
   style_attrs[STYLE_COMMENT] = A_DIM;
+  for (usz i = 0; i < ARRAY_LEN(spec); i++) style_attrs[spec[i].style] |= spec[i].attrs;
+
   for (i32 s = 0; s < STYLE_COUNT; s++) {
     idle_attrs[s] = style_attrs[s] | A_UNDERLINE;
     fg[s] = -1;
   }
 
-  if (!has_colors()) return;
+  if (!has_colors() || (no_color && *no_color)) {
+    PDC_set_bold(TRUE);
+    return;
+  }
 
   start_color();
   use_default_colors();
@@ -139,7 +146,7 @@ static void init_colors(void) {
     if (spec[i].fg >= COLORS) continue;
 
     init_pair(pair, spec[i].fg, -1);
-    style_attrs[spec[i].style] = spec[i].attrs | COLOR_PAIR(pair);
+    style_attrs[spec[i].style] |= COLOR_PAIR(pair);
     fg[spec[i].style] = spec[i].fg;
     pair++;
   }
