@@ -24,6 +24,7 @@ static void test_args(void);
 static void test_compile_error_keeps_last_good(void);
 static void test_runtime_error_keeps_partial_outputs(void);
 static void test_empty_output(void);
+static void test_query_highlighted(void);
 static void test_output_cap(void);
 static void test_debounce(void);
 static void test_changed_only_when_shown(void);
@@ -199,6 +200,20 @@ static void test_empty_output(void) {
   app_free(a);
 }
 
+/* the query sits after the 6-column label. */
+static void test_query_highlighted(void) {
+  app* a = open_app("tests/data/sample.json", ".a | length", 0, 0, jv_invalid(), 0);
+
+  if (!a) return;
+
+  ASSERT_EQ(style_at(a, 6, 0), STYLE_KEY);
+  ASSERT_EQ(style_at(a, 9, 0), STYLE_OPERATOR);
+  ASSERT_EQ(style_at(a, 11, 0), STYLE_BUILTIN);
+  retype(a, "[.a");
+  ASSERT_EQ(style_at(a, 6, 0), STYLE_ERROR);
+  app_free(a);
+}
+
 static void test_output_cap(void) {
   app* a = open_app("tests/data/sample.json", "range(100)", 0, 0, jv_invalid(), 3);
 
@@ -306,6 +321,7 @@ static void test_missing_file(void) {
   f(test_compile_error_keeps_last_good)        \
   f(test_runtime_error_keeps_partial_outputs)  \
   f(test_empty_output)                         \
+  f(test_query_highlighted)                    \
   f(test_output_cap)                           \
   f(test_debounce)                             \
   f(test_changed_only_when_shown)              \

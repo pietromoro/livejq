@@ -18,6 +18,12 @@ typedef enum {
   STYLE_STRING,
   STYLE_KEY,
   STYLE_PUNCT,
+  STYLE_VARIABLE,
+  STYLE_KEYWORD,
+  STYLE_BUILTIN,
+  STYLE_OPERATOR,
+  STYLE_FORMAT,
+  STYLE_COMMENT,
   STYLE_COUNT,
   STYLE_SELECTED = 0x80,      /* or'ed onto a style on the cursor's line */
   STYLE_SELECTED_IDLE = 0x40, /* the same, while the tree has no focus */

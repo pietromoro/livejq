@@ -30,7 +30,7 @@ static const char* render(editor* e, i32* cursor) {
   if (!screen) screen = grid_new(W, 1);
   grid_clear(screen);
   grid_puts(screen, 0, 0, "> ", STYLE_LABEL);
-  *cursor = editor_render(e, screen, 2, 0, W, STYLE_NORMAL);
+  *cursor = editor_render(e, screen, 2, 0, W, NULL);
   grid_line(screen, 0, buf, sizeof(buf));
   return buf;
 }

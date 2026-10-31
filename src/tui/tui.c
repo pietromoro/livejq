@@ -99,9 +99,9 @@ i32 tui_run(const char* path) {
   return 0;
 }
 
-/* jq's palette: gray null, green strings, bold punctuation and keys. The
- * cursor's line without focus gets a dark background, or an underline
- * with fewer than 16 colors. */
+/* jq's palette: gray null, green strings, bold punctuation and keys, which
+ * the query shares. The cursor's line without focus gets a dark
+ * background, or an underline with fewer than 16 colors. */
 static void init_colors(void) {
   static const struct {
     u8 style;
@@ -113,6 +113,12 @@ static void init_colors(void) {
       { STYLE_STRING, COLOR_GREEN, 0 },
       { STYLE_KEY, COLOR_BLUE, A_BOLD },
       { STYLE_NULL, 8, 0 },
+      { STYLE_VARIABLE, COLOR_MAGENTA, 0 },
+      { STYLE_KEYWORD, COLOR_YELLOW, A_BOLD },
+      { STYLE_BUILTIN, COLOR_CYAN, 0 },
+      { STYLE_OPERATOR, COLOR_YELLOW, 0 },
+      { STYLE_FORMAT, COLOR_MAGENTA, A_BOLD },
+      { STYLE_COMMENT, 8, 0 },
   };
   i16 fg[STYLE_COUNT];
   i16 pair = 1;
@@ -124,6 +130,8 @@ static void init_colors(void) {
   style_attrs[STYLE_ERROR] = A_BOLD | A_REVERSE;
   style_attrs[STYLE_PUNCT] = A_BOLD;
   style_attrs[STYLE_NULL] = A_DIM;
+  style_attrs[STYLE_KEYWORD] = A_BOLD;
+  style_attrs[STYLE_COMMENT] = A_DIM;
   for (i32 s = 0; s < STYLE_COUNT; s++) {
     idle_attrs[s] = style_attrs[s] | A_UNDERLINE;
     fg[s] = -1;

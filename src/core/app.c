@@ -6,6 +6,7 @@
 #include "app.h"
 #include "editor.h"
 #include "eval.h"
+#include "highlight.h"
 #include "loader.h"
 #include "tree.h"
 
@@ -127,11 +128,16 @@ b8 app_settle(app* a, i64 timeout_ms) {
 
 void app_render(app* a, grid* g) {
   i32 n = jv_array_length(jv_copy(a->outputs));
+  u8* styles = malloc(a->query.len + 1);
   i32 x;
+
+  if (!styles) abort();
 
   grid_clear(g);
   x = grid_puts(g, 0, 0, "QUERY ", STYLE_LABEL);
-  x = editor_render(&a->query, g, x, 0, g->w, STYLE_NORMAL);
+  highlight(a->query.text, a->query.len, styles);
+  x = editor_render(&a->query, g, x, 0, g->w, styles);
+  free(styles);
   if (a->focus == FOCUS_QUERY) {
     g->cursor_x = x;
     g->cursor_y = 0;

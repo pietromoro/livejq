@@ -32,7 +32,8 @@ void editor_word_right(editor* e);
 void editor_home(editor* e);
 void editor_end(editor* e);
 /* Draws the text into row y from column x up to max_x, scrolled to keep the
- * cursor visible. Returns the cursor's column. */
-i32 editor_render(editor* e, grid* g, i32 x, i32 y, i32 max_x, u8 st);
+ * cursor visible, each byte in its style from styles (STYLE_NORMAL when
+ * NULL). Returns the cursor's column. */
+i32 editor_render(editor* e, grid* g, i32 x, i32 y, i32 max_x, const u8* styles);
 
 #endif /* LIVEJQ_EDITOR_H */

@@ -97,10 +97,11 @@ void editor_end(editor* e) { e->cursor = e->len; }
 
 /* the cell after the text is kept for the cursor, and the text is not left
  * scrolled further than it needs. */
-i32 editor_render(editor* e, grid* g, i32 x, i32 y, i32 max_x, u8 st) {
+i32 editor_render(editor* e, grid* g, i32 x, i32 y, i32 max_x, const u8* styles) {
   i32 width = max_x - x;
   i32 at = columns(e->text, 0, e->cursor);
   i32 total = at + columns(e->text, e->cursor, e->len);
+  i32 col = x;
   usz from;
 
   if (width <= 0) return x;
@@ -111,7 +112,16 @@ i32 editor_render(editor* e, grid* g, i32 x, i32 y, i32 max_x, u8 st) {
   if (e->scroll < 0) e->scroll = 0;
 
   from = skip_columns(e->text, e->len, e->scroll);
-  grid_put(g, x, y, max_x, e->text + from, e->len - from, st);
+  while (from < e->len && col < max_x) {
+    u8 st = styles ? styles[from] : STYLE_NORMAL;
+    usz to = from + 1;
+
+    while (to < e->len && (!styles || styles[to] == st || ((u8)e->text[to] & 0xc0) == 0x80)) to++;
+
+    col = grid_put(g, col, y, max_x, e->text + from, to - from, st);
+    from = to;
+  }
+
   return x + at - e->scroll;
 }
 
