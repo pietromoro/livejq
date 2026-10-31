@@ -26,6 +26,7 @@ struct app {
   app_focus focus;
   b8 help;         /* the overlay is shown */
   b8 quit;
+  i32 h;           /* rows of the last render */
 
   editor query;
   b8 edited;      /* not submitted yet */
@@ -43,6 +44,7 @@ struct app {
 
 static void key(app* a, app_event ev);
 static void tree_key(app* a, u32 key);
+static b8 mouse(app* a, app_event ev);
 static void reload(app* a);
 static b8 edit(app* a, u32 key);
 static void submit(app* a);
@@ -118,6 +120,9 @@ b8 app_feed(app* a, app_event ev) {
     case EV_FILE_CHANGED:
       reload(a);
       break;
+    case EV_MOUSE:
+      changed = mouse(a, ev);
+      break;
   }
 
   return apply(a) || changed;
@@ -136,6 +141,7 @@ void app_render(app* a, grid* g) {
 
   if (!styles) abort();
 
+  a->h = g->h;
   grid_clear(g);
   x = grid_puts(g, 0, 0, "QUERY ", STYLE_LABEL);
   highlight(a->query.text, a->query.len, styles);
@@ -242,6 +248,24 @@ static void tree_key(app* a, u32 key) {
       break;
     default: break;
   }
+}
+
+/* a press focuses the zone under it, or closes the help. true when the
+ * screen changed. */
+static b8 mouse(app* a, app_event ev) {
+  app_focus was = a->focus;
+
+  if (ev.mouse != MOUSE_PRESS) return 0;
+
+  if (a->help) {
+    a->help = 0;
+    return 1;
+  }
+
+  if (ev.y == 0) a->focus = FOCUS_QUERY;
+  else if (ev.y < a->h - 1) a->focus = FOCUS_TREE;
+
+  return a->focus != was;
 }
 
 /* a file that cannot be read keeps the last data, with the reason shown. */

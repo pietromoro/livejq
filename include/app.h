@@ -31,7 +31,12 @@ typedef enum {
   EV_KEY = 0,
   EV_TICK,
   EV_FILE_CHANGED, /* reads the file again and reruns the query */
+  EV_MOUSE,
 } app_event_kind;
+
+typedef enum {
+  MOUSE_PRESS = 0, /* the left button */
+} app_mouse;
 
 typedef enum {
   FOCUS_QUERY = 0,
@@ -41,6 +46,9 @@ typedef enum {
 typedef struct {
   app_event_kind kind;
   u32 key;
+  app_mouse mouse;
+  i32 x; /* the mouse's cell */
+  i32 y;
   i64 now_ms;
 } app_event;
 

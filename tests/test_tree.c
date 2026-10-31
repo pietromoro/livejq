@@ -18,6 +18,7 @@
 
 static app* open_app(const char* path, const char* query);
 static void press(app* a, u32 key);
+static b8 click(app* a, i32 x, i32 y);
 static void type(app* a, const char* s);
 static void retype(app* a, const char* s);
 static void write_file(const char* path, const char* text);
@@ -25,6 +26,7 @@ static const char* line(app* a, i32 y);
 static const char* status(app* a);
 static b8 selected(app* a, i32 y);
 static void test_focus(void);
+static void test_click_focuses(void);
 static void test_quit_keys(void);
 static void test_navigation(void);
 static void test_fold_and_unfold(void);
@@ -63,6 +65,17 @@ static void press(app* a, u32 key) {
   ev.key = key;
   ev.now_ms = 0;
   app_feed(a, ev);
+}
+
+static b8 click(app* a, i32 x, i32 y) {
+  app_event ev;
+
+  ev.kind = EV_MOUSE;
+  ev.mouse = MOUSE_PRESS;
+  ev.x = x;
+  ev.y = y;
+  ev.now_ms = 0;
+  return app_feed(a, ev);
 }
 
 static void type(app* a, const char* s) {
@@ -148,6 +161,28 @@ static void test_focus(void) {
   ASSERT_EQ(screen->cursor_x, 9);
   press(a, 'w' & 0x1f);
   ASSERT_STREQ(line(a, 0), "QUERY");
+  app_free(a);
+}
+
+/* the status line is in no zone, and a press over the help only closes it. */
+static void test_click_focuses(void) {
+  app* a = open_app("tests/data/sample.json", ".");
+
+  if (!a) return;
+
+  line(a, 0);
+  CHECK(click(a, 5, 3));
+  ASSERT_EQ(app_focused(a), FOCUS_TREE);
+  CHECK(!click(a, 5, 4));
+  CHECK(!click(a, 5, H - 1));
+  ASSERT_EQ(app_focused(a), FOCUS_TREE);
+  CHECK(click(a, 20, 0));
+  ASSERT_EQ(app_focused(a), FOCUS_QUERY);
+  press(a, APP_KEY_F1);
+  CHECK(click(a, 5, 3));
+  ASSERT_EQ(app_focused(a), FOCUS_QUERY);
+  line(a, 0);
+  ASSERT_EQ(screen->cursor_x, 7);
   app_free(a);
 }
 
@@ -459,6 +494,7 @@ static void test_path_quoting(void) {
 
 #define TESTS(f)                          \
   f(test_focus)                           \
+  f(test_click_focuses)                   \
   f(test_quit_keys)                       \
   f(test_navigation)                      \
   f(test_fold_and_unfold)                 \

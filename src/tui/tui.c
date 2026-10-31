@@ -16,6 +16,7 @@
 
 static void init_colors(void);
 static b8 translate(i32 kind, wint_t ch, u32* key);
+static b8 translate_mouse(app_event* ev);
 static void blit(const grid* g);
 
 static attr_t style_attrs[STYLE_COUNT];
@@ -61,6 +62,8 @@ i32 tui_run(const app_opts* opts) {
   noecho();
   keypad(stdscr, TRUE);
   timeout(TICK_MS);
+  mousemask(BUTTON1_PRESSED, NULL); /* no motion: ?1003 floods hover events */
+  mouseinterval(0);
   PDC_set_bold(TRUE); /* real bold: a brightened color would not be one of the terminal's */
   init_colors();
   g = grid_new(COLS, LINES);
@@ -84,6 +87,8 @@ i32 tui_run(const app_opts* opts) {
       grid_free(g);
       g = grid_new(COLS, LINES);
       clear();
+    } else if (kind == KEY_CODE_YES && ch == KEY_MOUSE) {
+      if (translate_mouse(&ev)) ev.kind = EV_MOUSE;
     } else if (kind != ERR) {
       if (translate(kind, ch, &ev.key)) ev.kind = EV_KEY;
     }
@@ -210,6 +215,17 @@ static b8 translate(i32 kind, wint_t ch, u32* key) {
   }
 
   return 0;
+}
+
+static b8 translate_mouse(app_event* ev) {
+  MEVENT m;
+
+  if (getmouse(&m) != OK || !(m.bstate & BUTTON1_PRESSED)) return 0;
+
+  ev->mouse = MOUSE_PRESS;
+  ev->x = m.x;
+  ev->y = m.y;
+  return 1;
 }
 
 static void blit(const grid* g) {
