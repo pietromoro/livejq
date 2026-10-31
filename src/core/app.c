@@ -6,6 +6,7 @@
 #include "app.h"
 #include "editor.h"
 #include "eval.h"
+#include "help.h"
 #include "highlight.h"
 #include "loader.h"
 #include "tree.h"
@@ -23,6 +24,7 @@ struct app {
   eval* ev;
   tree* tree;
   app_focus focus;
+  b8 help;         /* the overlay is shown */
 
   editor query;
   b8 edited;      /* not submitted yet */
@@ -148,11 +150,25 @@ void app_render(app* a, grid* g) {
 
   tree_render(a->tree, g, 1, g->h - 2, a->stale, a->focus == FOCUS_TREE);
   render_status(a, g);
+  if (!a->help) return;
+
+  help_render(g, a->focus);
+  g->cursor_x = -1;
 }
 
 app_focus app_focused(const app* a) { return a->focus; }
 
 static void key(app* a, app_event ev) {
+  if (a->help) {
+    a->help = 0;
+    return;
+  }
+
+  if (ev.key == APP_KEY_F1 || (ev.key == '?' && a->focus == FOCUS_TREE)) {
+    a->help = 1;
+    return;
+  }
+
   if (ev.key == '\t' || ev.key == APP_KEY_BACKTAB) {
     a->focus = a->focus == FOCUS_QUERY ? FOCUS_TREE : FOCUS_QUERY;
     return;
