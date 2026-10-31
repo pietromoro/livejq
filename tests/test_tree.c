@@ -48,6 +48,8 @@ static void test_default_expansion(void);
 static void test_single_root_unlabeled(void);
 static void test_truncation(void);
 static void test_path_quoting(void);
+static void test_view_cycling(void);
+static void test_view_kept_by_path(void);
 
 static grid* screen;
 
@@ -608,6 +610,57 @@ static void test_path_quoting(void) {
   app_free(a);
 }
 
+static void test_view_cycling(void) {
+  app* a = open_app("tests/data/sample.json", ".users[0]");
+
+  if (!a) return;
+
+  press(a, '\t');
+  type(a, "jjj");
+  ASSERT_STREQ(row(a, 3), "    ts: 1730300000");
+  press(a, 'v');
+  ASSERT_STREQ(row(a, 3), "    ts: 0x67224860  hex");
+  press(a, 'v');
+  ASSERT_STREQ(row(a, 3), "    ts: 0o14710444140  oct");
+  press(a, 'V');
+  press(a, 'V');
+  ASSERT_STREQ(row(a, 3), "    ts: 1730300000");
+  press(a, 'V');
+  ASSERT_STREQ(row(a, 3), "    ts: 1.7303e9  exp");
+  press(a, '0');
+  ASSERT_STREQ(row(a, 3), "    ts: 1730300000");
+
+  press(a, 'k');
+  press(a, 'v');
+  ASSERT_STREQ(row(a, 2), "    name: \"alice\"");
+  press(a, 'k');
+  press(a, 'v');
+  ASSERT_STREQ(row(a, 1), "    id: 0x1  hex");
+  ASSERT_STREQ(row(a, 3), "    ts: 1730300000");
+  app_free(a);
+}
+
+static void test_view_kept_by_path(void) {
+  app* a = open_app("tests/data/sample.json", ".users[0]");
+
+  if (!a) return;
+
+  press(a, '\t');
+  type(a, "jjjv");
+  ASSERT_STREQ(row(a, 3), "    ts: 0x67224860  hex");
+
+  retype(a, ".users[0] + {a: 1}");
+  ASSERT_STREQ(row(a, 3), "    ts: 0x67224860  hex");
+  ASSERT_STREQ(row(a, 4), "    a: 1");
+
+  retype(a, ".users[0] | .ts = \"soon\"");
+  ASSERT_STREQ(row(a, 3), "    ts: \"soon\"");
+
+  retype(a, ".users[0] | .ts += 1");
+  ASSERT_STREQ(row(a, 3), "    ts: 0x67224861  hex");
+  app_free(a);
+}
+
 #define TESTS(f)                          \
   f(test_focus)                           \
   f(test_click_focuses)                   \
@@ -624,7 +677,9 @@ static void test_path_quoting(void) {
   f(test_default_expansion)               \
   f(test_single_root_unlabeled)           \
   f(test_truncation)                      \
-  f(test_path_quoting)
+  f(test_path_quoting)                    \
+  f(test_view_cycling)                    \
+  f(test_view_kept_by_path)
 
 #define TEST_HELPER_MAIN
 

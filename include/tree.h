@@ -19,14 +19,17 @@ typedef enum {
   TREE_TOGGLE,
   TREE_FOLD_ALL,
   TREE_UNFOLD_ALL,
+  TREE_VIEW_NEXT,
+  TREE_VIEW_PREV,
+  TREE_VIEW_RESET, /* back to the value as jq prints it */
 } tree_op;
 
 typedef struct tree tree;
 
 tree* tree_new(void);
 void tree_free(tree* t);
-/* Replaces the roots with the array outputs, keeping folds and the cursor by
- * path. */
+/* Replaces the roots with the array outputs, keeping folds, views and the
+ * cursor by path. */
 void tree_set(tree* t, jv outputs);
 void tree_do(tree* t, tree_op op);
 /* Moves the view by n rows, dragging the cursor along only to keep it in

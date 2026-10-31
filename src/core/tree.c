@@ -1,9 +1,10 @@
-/* tree - the outputs as foldable lines, folds and cursor kept by path. */
+/* tree - the outputs as foldable lines, state kept by path. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "tree.h"
+#include "views.h"
 
 #define EXPAND_LIMIT 1000
 #define MARK_OPEN    "\xe2\x96\xbe "
@@ -23,10 +24,18 @@ typedef struct {
   usz cap;
 } strbuf;
 
+typedef enum {
+  FOLD_NONE = 0,
+  FOLD_CLOSED,
+  FOLD_OPEN,
+} fold;
+
+/* what the user set on a path. */
 typedef struct {
   char* key; /* NULL when the slot is free */
-  b8 open;
-} fold;
+  fold fold;
+  view_id view;
+} node;
 
 typedef struct {
   jv value;
@@ -34,6 +43,7 @@ typedef struct {
   i32 parent; /* -1 for a root */
   i32 depth;
   b8 open;
+  view_id view;
 } row;
 
 struct tree {
@@ -45,9 +55,9 @@ struct tree {
   i32 nrows;
   i32 rows_cap;
 
-  fold* folds; /* open addressing, keyed by path */
-  usz nfolds;
-  usz folds_cap;
+  node* nodes; /* open addressing, keyed by path */
+  usz nnodes;
+  usz nodes_cap;
 
   char* cursor_key; /* where the cursor wants to be */
   i32 cursor;
@@ -72,7 +82,9 @@ static void fold_row(tree* t, b8 open);
 static void remember_cursor(tree* t);
 static void row_key(tree* t, i32 r);
 static void key_segment(strbuf* b, jv key, i32 depth);
-static fold* fold_find(tree* t, const char* key);
+static void cycle_view(tree* t, i32 step);
+static node* node_find(tree* t, const char* key);
+static node* node_at(tree* t, const char* key);
 static void fold_set(tree* t, const char* key, b8 open);
 static u32 hash(const char* s);
 static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag, b8 dim);
@@ -101,11 +113,11 @@ void tree_free(tree* t) {
     jv_free(t->rows[i].key);
   }
 
-  for (usz i = 0; i < t->folds_cap; i++) free(t->folds[i].key);
+  for (usz i = 0; i < t->nodes_cap; i++) free(t->nodes[i].key);
 
   jv_free(t->roots);
   free(t->rows);
-  free(t->folds);
+  free(t->nodes);
   free(t->cursor_key);
   free(t->key.s);
   free(t);
@@ -161,6 +173,15 @@ void tree_do(tree* t, tree_op op) {
       set_subtree(t, t->rows[t->cursor].value, op == TREE_UNFOLD_ALL);
       remember_cursor(t);
       rebuild(t);
+      break;
+    case TREE_VIEW_NEXT:
+      cycle_view(t, 1);
+      break;
+    case TREE_VIEW_PREV:
+      cycle_view(t, -1);
+      break;
+    case TREE_VIEW_RESET:
+      cycle_view(t, 0);
       break;
   }
 
@@ -277,6 +298,7 @@ static void add_rows(tree* t, jv value, jv key, i32 parent, i32 depth) {
   t->rows[r].parent = parent;
   t->rows[r].depth = depth;
   t->rows[r].open = is_open(t, value, depth);
+  t->rows[r].view = node_find(t, t->key.s)->view;
   t->nrows++;
   match_cursor(t, r);
 
@@ -304,9 +326,9 @@ static void match_cursor(tree* t, i32 r) {
 static b8 is_open(tree* t, jv value, i32 depth) {
   if (!has_children(value)) return 0;
 
-  fold* f = fold_find(t, t->key.s);
+  fold f = node_find(t, t->key.s)->fold;
 
-  if (f->key) return f->open;
+  if (f != FOLD_NONE) return f == FOLD_OPEN;
 
   return t->mode == EXPAND_ALL || (t->mode == EXPAND_ROOTS && depth == 0);
 }
@@ -450,48 +472,68 @@ static void key_segment(strbuf* b, jv key, i32 depth) {
   sb_add(b, "\"", 1);
 }
 
-static fold* fold_find(tree* t, const char* key) {
-  static fold none;
-  usz i;
+/* the step-th view after the cursor's, or the default one for 0. */
+static void cycle_view(tree* t, i32 step) {
+  row* w = &t->rows[t->cursor];
+  view_id ids[VIEW_COUNT];
+  i32 n = views_of(w->value, ids, VIEW_COUNT);
+  i32 at = 0;
 
-  if (t->folds_cap == 0) return &none;
+  for (i32 i = 0; i < n; i++)
+    if (ids[i] == w->view) at = i;
 
-  i = hash(key) & (t->folds_cap - 1);
-  while (t->folds[i].key && strcmp(t->folds[i].key, key) != 0) i = (i + 1) & (t->folds_cap - 1);
-
-  return &t->folds[i];
+  at = step == 0 ? 0 : (at + step + n) % n;
+  w->view = ids[at];
+  row_key(t, t->cursor);
+  node_at(t, t->key.s)->view = w->view;
 }
 
-static void fold_set(tree* t, const char* key, b8 open) {
-  fold* f;
+static node* node_find(tree* t, const char* key) {
+  static node none;
+  usz i;
 
-  if ((t->nfolds + 1) * 4 > t->folds_cap * 3) {
-    fold* old = t->folds;
-    usz old_cap = t->folds_cap;
+  if (t->nodes_cap == 0) return &none;
 
-    t->folds_cap = old_cap ? old_cap * 2 : 64;
-    t->folds = calloc(t->folds_cap, sizeof(fold));
-    if (!t->folds) abort();
+  i = hash(key) & (t->nodes_cap - 1);
+  while (t->nodes[i].key && strcmp(t->nodes[i].key, key) != 0) i = (i + 1) & (t->nodes_cap - 1);
+
+  return &t->nodes[i];
+}
+
+/* the node for key, added when missing. */
+static node* node_at(tree* t, const char* key) {
+  node* f;
+
+  if ((t->nnodes + 1) * 4 > t->nodes_cap * 3) {
+    node* old = t->nodes;
+    usz old_cap = t->nodes_cap;
+
+    t->nodes_cap = old_cap ? old_cap * 2 : 64;
+    t->nodes = calloc(t->nodes_cap, sizeof(node));
+    if (!t->nodes) abort();
 
     for (usz i = 0; i < old_cap; i++) {
       if (!old[i].key) continue;
 
-      *fold_find(t, old[i].key) = old[i];
+      *node_find(t, old[i].key) = old[i];
     }
 
     free(old);
   }
 
-  f = fold_find(t, key);
-  if (!f->key) {
-    f->key = malloc(strlen(key) + 1);
-    if (!f->key) abort();
+  f = node_find(t, key);
+  if (f->key) return f;
 
-    strcpy(f->key, key);
-    t->nfolds++;
-  }
+  f->key = malloc(strlen(key) + 1);
+  if (!f->key) abort();
 
-  f->open = open;
+  strcpy(f->key, key);
+  t->nnodes++;
+  return f;
+}
+
+static void fold_set(tree* t, const char* key, b8 open) {
+  node_at(t, key)->fold = open ? FOLD_OPEN : FOLD_CLOSED;
 }
 
 static u32 hash(const char* s) {
@@ -507,6 +549,8 @@ static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag
   jv_kind kind = jv_get_kind(w->value);
   char buf[32];
   u8 punct = (dim ? STYLE_DIM : STYLE_PUNCT) | flag;
+  const char* tag = view_name(w->view);
+  i32 tag_w;
   jv text;
 
   x += w->depth * 2;
@@ -538,17 +582,25 @@ static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag
     return;
   }
 
-  text = jv_dump_string(jv_copy(w->value), 0);
-  grid_put_fit(
+  text = w->view == VIEW_DEFAULT ? jv_invalid() : view_text(w->value, w->view);
+  if (!jv_is_valid(text)) {
+    jv_free(text);
+    text = jv_dump_string(jv_copy(w->value), 0);
+    tag = "";
+  }
+
+  tag_w = tag[0] ? utf8_columns(tag, strlen(tag)) + 2 : 0;
+  x = grid_put_fit(
     g,
     x,
     y,
-    max_x,
+    max_x - tag_w > x ? max_x - tag_w : max_x,
     jv_string_value(text),
     (usz)jv_string_length_bytes(jv_copy(text)),
     (dim ? STYLE_DIM : kind_style(w->value)) | flag
   );
   jv_free(text);
+  if (tag_w) grid_put(g, x + 2, y, max_x, tag, strlen(tag), STYLE_EMPTY | flag);
 }
 
 /* the path of row r as jq writes it, after "#n " if there are more roots. */

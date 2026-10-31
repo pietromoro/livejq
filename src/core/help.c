@@ -30,6 +30,8 @@ static const entry tree_keys[] = {
     { "H L", "fold / unfold subtree" },
     { "g G  home end", "top / bottom" },
     { "pgup pgdn", "page" },
+    { "v V", "next / previous view" },
+    { "0", "value as jq prints it" },
     { "tab", "query" },
     { "? F1", "help" },
     { "q  ctrl-c", "quit" },

@@ -1,0 +1,107 @@
+/* views tests - each value in each view, straight from the library. */
+#include <string.h>
+
+#include <jv.h>
+
+#include "defines.h"
+#include "views.h"
+
+#include "test_helper.in"
+
+static const char* shown(const char* json, view_id id);
+static const char* offered(const char* json);
+static void test_bases(void);
+static void test_negative_and_huge(void);
+static void test_exponent(void);
+static void test_offered(void);
+static void test_names(void);
+
+/* json parsed, then in view id; "-" when the view does not apply. */
+static const char* shown(const char* json, view_id id) {
+  static char buf[128];
+  jv v = jv_parse(json);
+  jv text = view_text(v, id);
+
+  if (jv_is_valid(text)) snprintf(buf, sizeof(buf), "%s", jv_string_value(text));
+  else strcpy(buf, "-");
+
+  jv_free(text);
+  jv_free(v);
+  return buf;
+}
+
+/* the names of the views json is offered in, space separated. */
+static const char* offered(const char* json) {
+  static char buf[128];
+  view_id ids[VIEW_COUNT];
+  jv v = jv_parse(json);
+  i32 n = views_of(v, ids, VIEW_COUNT);
+
+  buf[0] = '\0';
+  for (i32 i = 0; i < n; i++) {
+    strcat(buf, i ? " " : "");
+    strcat(buf, ids[i] == VIEW_DEFAULT ? "default" : view_name(ids[i]));
+  }
+
+  jv_free(v);
+  return buf;
+}
+
+static void test_bases(void) {
+  ASSERT_STREQ(shown("255", VIEW_HEX), "0xff");
+  ASSERT_STREQ(shown("255", VIEW_OCTAL), "0o377");
+  ASSERT_STREQ(shown("5", VIEW_BINARY), "0b101");
+  ASSERT_STREQ(shown("0", VIEW_HEX), "0x0");
+  ASSERT_STREQ(shown("0", VIEW_BINARY), "0b0");
+  ASSERT_STREQ(shown("1730300000", VIEW_HEX), "0x67224860");
+  ASSERT_STREQ(shown("1e3", VIEW_HEX), "0x3e8");
+  ASSERT_STREQ(shown("2.0", VIEW_HEX), "0x2");
+  ASSERT_STREQ(shown("1.5", VIEW_HEX), "-");
+  ASSERT_STREQ(shown("\"ff\"", VIEW_HEX), "-");
+}
+
+static void test_negative_and_huge(void) {
+  ASSERT_STREQ(shown("-255", VIEW_HEX), "-0xff");
+  ASSERT_STREQ(shown("-1", VIEW_BINARY), "-0b1");
+  ASSERT_STREQ(shown("-9223372036854775808", VIEW_HEX), "-0x8000000000000000");
+  ASSERT_STREQ(shown("9007199254740993", VIEW_HEX), "0x20000000000001");
+  ASSERT_STREQ(shown("9223372036854775807", VIEW_OCTAL), "0o777777777777777777777");
+  ASSERT_STREQ(shown("18446744073709551616", VIEW_HEX), "-");
+  ASSERT_STREQ(shown("1e300", VIEW_HEX), "-");
+}
+
+static void test_exponent(void) {
+  ASSERT_STREQ(shown("1500", VIEW_EXPONENT), "1.5e3");
+  ASSERT_STREQ(shown("0.00012", VIEW_EXPONENT), "1.2e-4");
+  ASSERT_STREQ(shown("-7", VIEW_EXPONENT), "-7e0");
+  ASSERT_STREQ(shown("1e300", VIEW_EXPONENT), "1e300");
+  ASSERT_STREQ(shown("0.1", VIEW_EXPONENT), "1e-1");
+  ASSERT_STREQ(shown("3.141592653589793", VIEW_EXPONENT), "3.141592653589793e0");
+  ASSERT_STREQ(shown("0", VIEW_EXPONENT), "-");
+}
+
+static void test_offered(void) {
+  ASSERT_STREQ(offered("42"), "default hex oct bin exp");
+  ASSERT_STREQ(offered("1.5"), "default exp");
+  ASSERT_STREQ(offered("0"), "default hex oct bin");
+  ASSERT_STREQ(offered("\"hello\""), "default");
+  ASSERT_STREQ(offered("null"), "default");
+  ASSERT_STREQ(offered("[1]"), "default");
+}
+
+static void test_names(void) {
+  ASSERT_STREQ(view_name(VIEW_HEX), "hex");
+  ASSERT_STREQ(view_name(VIEW_DEFAULT), "");
+}
+
+#define TESTS(f)               \
+  f(test_bases)                \
+  f(test_negative_and_huge)    \
+  f(test_exponent)             \
+  f(test_offered)              \
+  f(test_names)
+
+#define TEST_HELPER_MAIN
+
+/* curufmt skip translation-unit-order */
+#include "test_helper.in"

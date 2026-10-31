@@ -244,6 +244,15 @@ static void tree_key(app* a, u32 key) {
     case APP_KEY_PAGE_DOWN:
       tree_do(a->tree, TREE_PAGE_DOWN);
       break;
+    case 'v':
+      tree_do(a->tree, TREE_VIEW_NEXT);
+      break;
+    case 'V':
+      tree_do(a->tree, TREE_VIEW_PREV);
+      break;
+    case '0':
+      tree_do(a->tree, TREE_VIEW_RESET);
+      break;
     default: break;
   }
 }
