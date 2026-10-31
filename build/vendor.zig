@@ -240,7 +240,8 @@ const pdc_port: []const []const u8 = &.{
 
 // the vt port sends every color as 38;5;N or 38;2;R;G;B, so the terminal's
 // theme never applies. the 16 basic colors go out as their ansi codes instead,
-// as jq prints them.
+// as jq prints them. it never sends dim either, only darkens an explicit color:
+// dim goes out as 2m, and turning it off resets the attributes like bold does.
 const ansi_splices: []const Splice = &.{
   .{
     .anchor = "static void reset_color( char *obuff, const chtype ch)\n",
@@ -279,6 +280,22 @@ const ansi_splices: []const Splice = &.{
     .after =
     \\        else if( ansi_color( fg) >= 0)
     \\            ansi_string( obuff, ansi_color( fg), 30);
+    \\
+    ,
+  },
+  .{
+    .anchor = "       if( changes & (A_REVERSE | A_STRIKEOUT | A_BOLD))\n",
+    .before =
+    \\       if( changes & A_DIM)
+    \\          changes |= A_BOLD;
+    \\
+    ,
+  },
+  .{
+    .anchor = "          strcat( obuff, BOLD_ON);\n",
+    .after =
+    \\       if( *srcp & A_DIM)
+    \\          strcat( obuff, DIM_ON);
     \\
     ,
   },
