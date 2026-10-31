@@ -162,20 +162,26 @@ const cancel_setter =
 ;
 
 fn cancellableExecute(b: *std.Build) []const u8 {
-  const path = jq_dir ++ "/src/execute.c";
+  const src = spliced(b, jq_dir ++ "/src/execute.c", cancel_splices);
+  return std.mem.concat(b.allocator, u8, &.{ src, cancel_setter }) catch @panic("OOM");
+}
+
+// the build fails on a missing or repeated anchor, so a submodule bump that
+// moves the code cannot drop a patch silently.
+fn spliced(b: *std.Build, path: []const u8, splices: []const Splice) []const u8 {
   var src: []const u8 = b.build_root.handle.readFileAlloc(b.graph.io, path, b.allocator, .unlimited) catch |err|
     std.debug.panic("cannot read {s}: {t}", .{ path, err });
 
-  for (cancel_splices) |s| {
+  for (splices) |s| {
     const at = std.mem.indexOf(u8, src, s.anchor) orelse
-      std.debug.panic("{s}: cancellation anchor not found, recheck the patch for this jq:\n{s}", .{ path, s.anchor });
+      std.debug.panic("{s}: patch anchor not found, recheck the patch for this version:\n{s}", .{ path, s.anchor });
     if (std.mem.indexOfPos(u8, src, at + 1, s.anchor) != null)
-      std.debug.panic("{s}: cancellation anchor is not unique:\n{s}", .{ path, s.anchor });
+      std.debug.panic("{s}: patch anchor is not unique:\n{s}", .{ path, s.anchor });
     src = std.mem.concat(b.allocator, u8, &.{
       src[0..at], s.before, s.anchor, s.after, src[at + s.anchor.len ..],
     }) catch @panic("OOM");
   }
-  return std.mem.concat(b.allocator, u8, &.{ src, cancel_setter }) catch @panic("OOM");
+  return src;
 }
 
 pub fn jq(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, onig: *std.Build.Step.Compile) *std.Build.Step.Compile {
@@ -232,21 +238,73 @@ const pdc_port: []const []const u8 = &.{
   "pdcclip.c", "pdcdisp.c", "pdcgetsc.c", "pdckbd.c", "pdcscrn.c", "pdcsetsc.c", "pdcutil.c",
 };
 
+// the vt port sends every color as 38;5;N or 38;2;R;G;B, so the terminal's
+// theme never applies. the 16 basic colors go out as their ansi codes instead,
+// as jq prints them.
+const ansi_splices: []const Splice = &.{
+  .{
+    .anchor = "static void reset_color( char *obuff, const chtype ch)\n",
+    .before =
+    \\PACKED_RGB PDC_default_color( int idx);
+    \\
+    \\static int ansi_color( const PACKED_RGB rgb)
+    \\{
+    \\    int i;
+    \\
+    \\    for( i = 0; i < 16; i++)
+    \\        if( rgb == PDC_default_color( i))
+    \\            return( (i & 8) | ((i & COLOR_RED) ? 1 : 0)
+    \\                    | ((i & COLOR_GREEN) ? 2 : 0) | ((i & COLOR_BLUE) ? 4 : 0));
+    \\    return( -1);
+    \\}
+    \\
+    \\static void ansi_string( char *otext, const int idx, const int base)
+    \\{
+    \\    sprintf( otext, CSI "%dm", (idx & 8 ? base + 60 : base) + (idx & 7));
+    \\}
+    \\
+    \\
+    ,
+  },
+  .{
+    .anchor = "            strcpy( obuff, CSI \"49m\");\n",
+    .after =
+    \\        else if( ansi_color( bg) >= 0)
+    \\            ansi_string( obuff, ansi_color( bg), 40);
+    \\
+    ,
+  },
+  .{
+    .anchor = "            strcpy( obuff, CSI \"39m\");\n",
+    .after =
+    \\        else if( ansi_color( fg) >= 0)
+    \\            ansi_string( obuff, ansi_color( fg), 30);
+    \\
+    ,
+  },
+};
+
 pub const pdc_macros: []const [2][]const u8 = &.{
   .{ "PDC_WIDE", "1" },
   .{ "PDC_FORCE_UTF8", "1" },
 };
 
 pub fn pdcurses(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Step.Compile {
-  const port = if (target.result.os.tag == .windows) "wincon" else "vt";
-
   const mod = vendorModule(b, target, optimize);
   mod.addIncludePath(b.path(pdc_dir));
   for (pdc_macros) |m| mod.addCMacro(m[0], m[1]);
   if (target.result.os.tag == .macos) mod.addCMacro("_DEFAULT_SOURCE", "1");
   if (target.result.os.tag == .linux) mod.addCMacro("_GNU_SOURCE", "1");
   mod.addCSourceFiles(.{ .root = b.path(pdc_dir ++ "/pdcurses"), .files = pdc_core, .flags = vendor_flags });
-  mod.addCSourceFiles(.{ .root = b.path(b.fmt("{s}/{s}", .{ pdc_dir, port })), .files = pdc_port, .flags = vendor_flags });
+  if (target.result.os.tag == .windows) {
+    mod.addCSourceFiles(.{ .root = b.path(pdc_dir ++ "/wincon"), .files = pdc_port, .flags = vendor_flags });
+  } else {
+    const generated = b.addWriteFiles();
+    const disp_c = generated.add("pdcdisp.c", spliced(b, pdc_dir ++ "/vt/pdcdisp.c", ansi_splices));
+    mod.addIncludePath(b.path(pdc_dir ++ "/vt"));
+    mod.addCSourceFiles(.{ .root = b.path(pdc_dir ++ "/vt"), .files = pdc_port[0..1] ++ pdc_port[2..], .flags = vendor_flags });
+    mod.addCSourceFile(.{ .file = disp_c, .flags = vendor_flags });
+  }
   if (target.result.os.tag == .windows) {
     mod.linkSystemLibrary("user32", .{});
     mod.linkSystemLibrary("winmm", .{});

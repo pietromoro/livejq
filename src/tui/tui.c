@@ -58,6 +58,7 @@ i32 tui_run(const app_opts* opts) {
   noecho();
   keypad(stdscr, TRUE);
   timeout(TICK_MS);
+  PDC_set_bold(TRUE); /* real bold: a brightened color would not be one of the terminal's */
   init_colors();
   g = grid_new(COLS, LINES);
 
@@ -96,9 +97,9 @@ i32 tui_run(const app_opts* opts) {
 
 /* jq's palette: gray null, green strings, bold punctuation and keys, which
  * the query shares. The cursor's line without focus gets a dark
- * background, or an underline with fewer than 16 colors. NO_COLOR keeps
- * the attributes only; PDCursesMod shows A_BOLD as a brighter color unless
- * told to use real bold. */
+ * background, or an underline with fewer than 16 colors. A color stands
+ * in for dim, which would turn it into one the terminal does not theme.
+ * NO_COLOR keeps the attributes only. */
 static void init_colors(void) {
   static const struct {
     u8 style;
@@ -135,10 +136,7 @@ static void init_colors(void) {
     fg[s] = -1;
   }
 
-  if (!has_colors() || (no_color && *no_color)) {
-    PDC_set_bold(TRUE);
-    return;
-  }
+  if (!has_colors() || (no_color && *no_color)) return;
 
   start_color();
   use_default_colors();
@@ -146,7 +144,7 @@ static void init_colors(void) {
     if (spec[i].fg >= COLORS) continue;
 
     init_pair(pair, spec[i].fg, -1);
-    style_attrs[spec[i].style] |= COLOR_PAIR(pair);
+    style_attrs[spec[i].style] = (style_attrs[spec[i].style] & ~A_DIM) | COLOR_PAIR(pair);
     fg[spec[i].style] = spec[i].fg;
     pair++;
   }
