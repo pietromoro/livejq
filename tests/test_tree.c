@@ -25,6 +25,7 @@ static const char* line(app* a, i32 y);
 static const char* status(app* a);
 static b8 selected(app* a, i32 y);
 static void test_focus(void);
+static void test_quit_keys(void);
 static void test_navigation(void);
 static void test_fold_and_unfold(void);
 static void test_fold_subtree(void);
@@ -147,6 +148,31 @@ static void test_focus(void) {
   ASSERT_EQ(screen->cursor_x, 9);
   press(a, 'w' & 0x1f);
   ASSERT_STREQ(line(a, 0), "QUERY");
+  app_free(a);
+}
+
+static void test_quit_keys(void) {
+  app* a = open_app("tests/data/sample.json", ".");
+
+  if (!a) return;
+
+  type(a, "q");
+  CHECK(!app_quitting(a));
+  ASSERT_STREQ(line(a, 0), "QUERY .q");
+  press(a, '\t');
+  press(a, '?');
+  press(a, 'q');
+  CHECK(!app_quitting(a));
+  press(a, 'q');
+  CHECK(app_quitting(a));
+  app_free(a);
+
+  a = open_app("tests/data/sample.json", ".");
+  if (!a) return;
+
+  press(a, APP_KEY_F1);
+  press(a, 'c' & 0x1f);
+  CHECK(app_quitting(a));
   app_free(a);
 }
 
@@ -433,6 +459,7 @@ static void test_path_quoting(void) {
 
 #define TESTS(f)                          \
   f(test_focus)                           \
+  f(test_quit_keys)                       \
   f(test_navigation)                      \
   f(test_fold_and_unfold)                 \
   f(test_fold_subtree)                    \

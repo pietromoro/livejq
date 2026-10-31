@@ -25,6 +25,7 @@ struct app {
   tree* tree;
   app_focus focus;
   b8 help;         /* the overlay is shown */
+  b8 quit;
 
   editor query;
   b8 edited;      /* not submitted yet */
@@ -158,7 +159,14 @@ void app_render(app* a, grid* g) {
 
 app_focus app_focused(const app* a) { return a->focus; }
 
+b8 app_quitting(const app* a) { return a->quit; }
+
 static void key(app* a, app_event ev) {
+  if (ev.key == CTRL('c')) {
+    a->quit = 1;
+    return;
+  }
+
   if (a->help) {
     a->help = 0;
     return;
@@ -171,6 +179,11 @@ static void key(app* a, app_event ev) {
 
   if (ev.key == '\t' || ev.key == APP_KEY_BACKTAB) {
     a->focus = a->focus == FOCUS_QUERY ? FOCUS_TREE : FOCUS_QUERY;
+    return;
+  }
+
+  if (ev.key == 'q' && a->focus == FOCUS_TREE) {
+    a->quit = 1;
     return;
   }
 

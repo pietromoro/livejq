@@ -65,5 +65,7 @@ b8 app_feed(app* a, app_event ev);
 b8 app_settle(app* a, i64 timeout_ms);
 void app_render(app* a, grid* g);
 app_focus app_focused(const app* a);
+/* True after a quit key: Ctrl-C anywhere, q in the tree. */
+b8 app_quitting(const app* a);
 
 #endif /* LIVEJQ_APP_H */

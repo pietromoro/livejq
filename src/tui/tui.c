@@ -10,7 +10,6 @@
 #include "tui.h"
 
 #define TICK_MS    30
-#define KEY_CTRL_C 3
 #define CURSOR_BAR 4 /* PDCursesMod's caret, where 1 is an underline */
 
 static void init_colors(void);
@@ -81,12 +80,11 @@ i32 tui_run(const app_opts* opts) {
       g = grid_new(COLS, LINES);
       clear();
     } else if (kind != ERR) {
-      if (kind == OK && ch == KEY_CTRL_C) break;
-      if (kind == OK && ch == 'q' && app_focused(a) == FOCUS_TREE) break;
       if (translate(kind, ch, &ev.key)) ev.kind = EV_KEY;
     }
 
     dirty = app_feed(a, ev) || (kind == KEY_CODE_YES && ch == KEY_RESIZE);
+    if (app_quitting(a)) break;
   }
 
   tui_leave();
