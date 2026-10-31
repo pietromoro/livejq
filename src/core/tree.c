@@ -170,6 +170,20 @@ void tree_do(tree* t, tree_op op) {
   remember_cursor(t);
 }
 
+b8 tree_scroll(tree* t, i32 n) {
+  i32 top = t->top + n;
+
+  if (top > t->nrows - t->page) top = t->nrows - t->page;
+  if (top < 0) top = 0;
+  if (top == t->top) return 0;
+
+  t->top = top;
+  if (t->cursor < top) t->cursor = top;
+  if (t->cursor >= top + t->page) t->cursor = top + t->page - 1;
+  remember_cursor(t);
+  return 1;
+}
+
 void tree_render(tree* t, grid* g, i32 y, i32 h, b8 dim, b8 focused) {
   u8 selected = focused ? STYLE_SELECTED : STYLE_SELECTED_IDLE;
 

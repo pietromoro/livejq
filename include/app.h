@@ -35,7 +35,9 @@ typedef enum {
 } app_event_kind;
 
 typedef enum {
-  MOUSE_PRESS = 0, /* the left button */
+  APP_MOUSE_PRESS = 0, /* the left button */
+  APP_MOUSE_WHEEL_UP,
+  APP_MOUSE_WHEEL_DOWN,
 } app_mouse;
 
 typedef enum {

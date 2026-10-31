@@ -13,6 +13,7 @@
 
 #define DEBOUNCE_MS 150
 #define DEFAULT_CAP 10000
+#define WHEEL_ROWS  3
 #define CTRL(c)     ((c) & 0x1f)
 
 struct app {
@@ -250,12 +251,18 @@ static void tree_key(app* a, u32 key) {
   }
 }
 
-/* a press focuses the zone under it, or closes the help. true when the
- * screen changed. */
+/* a press focuses the zone under it, or closes the help; the wheel
+ * scrolls the tree under it without focusing it. true when the screen
+ * changed. */
 static b8 mouse(app* a, app_event ev) {
   app_focus was = a->focus;
+  b8 in_tree = ev.y > 0 && ev.y < a->h - 1;
 
-  if (ev.mouse != MOUSE_PRESS) return 0;
+  if (ev.mouse != APP_MOUSE_PRESS) {
+    if (a->help || !in_tree) return 0;
+
+    return tree_scroll(a->tree, ev.mouse == APP_MOUSE_WHEEL_UP ? -WHEEL_ROWS : WHEEL_ROWS);
+  }
 
   if (a->help) {
     a->help = 0;
@@ -263,7 +270,7 @@ static b8 mouse(app* a, app_event ev) {
   }
 
   if (ev.y == 0) a->focus = FOCUS_QUERY;
-  else if (ev.y < a->h - 1) a->focus = FOCUS_TREE;
+  else if (in_tree) a->focus = FOCUS_TREE;
 
   return a->focus != was;
 }

@@ -18,7 +18,7 @@
 
 static app* open_app(const char* path, const char* query);
 static void press(app* a, u32 key);
-static b8 click(app* a, i32 x, i32 y);
+static b8 mouse(app* a, app_mouse m, i32 x, i32 y);
 static void type(app* a, const char* s);
 static void retype(app* a, const char* s);
 static void write_file(const char* path, const char* text);
@@ -27,6 +27,7 @@ static const char* status(app* a);
 static b8 selected(app* a, i32 y);
 static void test_focus(void);
 static void test_click_focuses(void);
+static void test_wheel_scrolls(void);
 static void test_quit_keys(void);
 static void test_navigation(void);
 static void test_fold_and_unfold(void);
@@ -67,11 +68,11 @@ static void press(app* a, u32 key) {
   app_feed(a, ev);
 }
 
-static b8 click(app* a, i32 x, i32 y) {
+static b8 mouse(app* a, app_mouse m, i32 x, i32 y) {
   app_event ev;
 
   ev.kind = EV_MOUSE;
-  ev.mouse = MOUSE_PRESS;
+  ev.mouse = m;
   ev.x = x;
   ev.y = y;
   ev.now_ms = 0;
@@ -171,18 +172,49 @@ static void test_click_focuses(void) {
   if (!a) return;
 
   line(a, 0);
-  CHECK(click(a, 5, 3));
+  CHECK(mouse(a, APP_MOUSE_PRESS, 5, 3));
   ASSERT_EQ(app_focused(a), FOCUS_TREE);
-  CHECK(!click(a, 5, 4));
-  CHECK(!click(a, 5, H - 1));
+  CHECK(!mouse(a, APP_MOUSE_PRESS, 5, 4));
+  CHECK(!mouse(a, APP_MOUSE_PRESS, 5, H - 1));
   ASSERT_EQ(app_focused(a), FOCUS_TREE);
-  CHECK(click(a, 20, 0));
+  CHECK(mouse(a, APP_MOUSE_PRESS, 20, 0));
   ASSERT_EQ(app_focused(a), FOCUS_QUERY);
   press(a, APP_KEY_F1);
-  CHECK(click(a, 5, 3));
+  CHECK(mouse(a, APP_MOUSE_PRESS, 5, 3));
   ASSERT_EQ(app_focused(a), FOCUS_QUERY);
   line(a, 0);
   ASSERT_EQ(screen->cursor_x, 7);
+  app_free(a);
+}
+
+/* the cursor stays on its row while it is in view. */
+static void test_wheel_scrolls(void) {
+  app* a = open_app("tests/data/sample.json", "select(.ok) | [range(30)]");
+
+  if (!a) return;
+
+  line(a, 0);
+  CHECK(mouse(a, APP_MOUSE_WHEEL_DOWN, 5, 4));
+  ASSERT_EQ(app_focused(a), FOCUS_QUERY);
+  ASSERT_STREQ(line(a, 1), "    2: 2");
+  ASSERT_STREQ(status(a), ".[2]");
+
+  press(a, '\t');
+  for (i32 i = 0; i < 5; i++) press(a, 'j');
+  CHECK(mouse(a, APP_MOUSE_WHEEL_UP, 5, 4));
+  ASSERT_STREQ(line(a, 1), OPEN "[30]");
+  ASSERT_STREQ(status(a), ".[7]");
+  CHECK(!mouse(a, APP_MOUSE_WHEEL_UP, 5, 4));
+
+  for (i32 i = 0; i < 7; i++) CHECK(mouse(a, APP_MOUSE_WHEEL_DOWN, 5, 4));
+  CHECK(!mouse(a, APP_MOUSE_WHEEL_DOWN, 5, 4));
+  ASSERT_STREQ(line(a, H - 2), "    29: 29");
+  ASSERT_STREQ(status(a), ".[20]");
+
+  CHECK(!mouse(a, APP_MOUSE_WHEEL_UP, 5, 0));
+  CHECK(!mouse(a, APP_MOUSE_WHEEL_UP, 5, H - 1));
+  press(a, '?');
+  CHECK(!mouse(a, APP_MOUSE_WHEEL_UP, 5, 4));
   app_free(a);
 }
 
@@ -495,6 +527,7 @@ static void test_path_quoting(void) {
 #define TESTS(f)                          \
   f(test_focus)                           \
   f(test_click_focuses)                   \
+  f(test_wheel_scrolls)                   \
   f(test_quit_keys)                       \
   f(test_navigation)                      \
   f(test_fold_and_unfold)                 \

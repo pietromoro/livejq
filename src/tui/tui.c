@@ -62,7 +62,7 @@ i32 tui_run(const app_opts* opts) {
   noecho();
   keypad(stdscr, TRUE);
   timeout(TICK_MS);
-  mousemask(BUTTON1_PRESSED, NULL); /* no motion: ?1003 floods hover events */
+  mousemask(BUTTON1_PRESSED | BUTTON4_PRESSED | BUTTON5_PRESSED, NULL); /* no motion: ?1003 floods hover events */
   mouseinterval(0);
   PDC_set_bold(TRUE); /* real bold: a brightened color would not be one of the terminal's */
   init_colors();
@@ -220,9 +220,13 @@ static b8 translate(i32 kind, wint_t ch, u32* key) {
 static b8 translate_mouse(app_event* ev) {
   MEVENT m;
 
-  if (getmouse(&m) != OK || !(m.bstate & BUTTON1_PRESSED)) return 0;
+  if (getmouse(&m) != OK) return 0;
 
-  ev->mouse = MOUSE_PRESS;
+  if (m.bstate & BUTTON1_PRESSED) ev->mouse = APP_MOUSE_PRESS;
+  else if (m.bstate & BUTTON4_PRESSED) ev->mouse = APP_MOUSE_WHEEL_UP;
+  else if (m.bstate & BUTTON5_PRESSED) ev->mouse = APP_MOUSE_WHEEL_DOWN;
+  else return 0;
+
   ev->x = m.x;
   ev->y = m.y;
   return 1;
