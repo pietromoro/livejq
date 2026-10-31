@@ -32,6 +32,10 @@ void tree_do(tree* t, tree_op op);
 /* Moves the view by n rows, dragging the cursor along only to keep it in
  * view. False when the view was already at that end. */
 b8 tree_scroll(tree* t, i32 n);
+/* Selects the line at row n of the view, and toggles it when x is on its
+ * fold mark, or when again is set and it was selected already. False when
+ * there is no line there. */
+b8 tree_click(tree* t, i32 x, i32 n, b8 again);
 /* Draws the lines into rows y..y+h-1, scrolled to show the cursor. */
 void tree_render(tree* t, grid* g, i32 y, i32 h, b8 dim, b8 focused);
 /* The cursor's path as jq writes it, "" when there are no lines. */

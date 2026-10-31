@@ -184,6 +184,21 @@ b8 tree_scroll(tree* t, i32 n) {
   return 1;
 }
 
+b8 tree_click(tree* t, i32 x, i32 n, b8 again) {
+  i32 r = t->top + n;
+  i32 mark;
+
+  if (n < 0 || r >= t->nrows) return 0;
+
+  mark = t->rows[r].depth * 2;
+  again = again && r == t->cursor;
+  t->cursor = r;
+  remember_cursor(t);
+  if (again || (x >= mark && x < mark + 2)) tree_do(t, TREE_TOGGLE);
+
+  return 1;
+}
+
 void tree_render(tree* t, grid* g, i32 y, i32 h, b8 dim, b8 focused) {
   u8 selected = focused ? STYLE_SELECTED : STYLE_SELECTED_IDLE;
 

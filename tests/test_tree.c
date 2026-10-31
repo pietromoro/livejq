@@ -27,6 +27,7 @@ static const char* status(app* a);
 static b8 selected(app* a, i32 y);
 static void test_focus(void);
 static void test_click_focuses(void);
+static void test_click_picks_lines(void);
 static void test_wheel_scrolls(void);
 static void test_quit_keys(void);
 static void test_navigation(void);
@@ -174,7 +175,6 @@ static void test_click_focuses(void) {
   line(a, 0);
   CHECK(mouse(a, APP_MOUSE_PRESS, 5, 3));
   ASSERT_EQ(app_focused(a), FOCUS_TREE);
-  CHECK(!mouse(a, APP_MOUSE_PRESS, 5, 4));
   CHECK(!mouse(a, APP_MOUSE_PRESS, 5, H - 1));
   ASSERT_EQ(app_focused(a), FOCUS_TREE);
   CHECK(mouse(a, APP_MOUSE_PRESS, 20, 0));
@@ -184,6 +184,44 @@ static void test_click_focuses(void) {
   ASSERT_EQ(app_focused(a), FOCUS_QUERY);
   line(a, 0);
   ASSERT_EQ(screen->cursor_x, 7);
+  app_free(a);
+}
+
+/* a press on a fold mark toggles its line, and so does a second press on
+ * the selected line once the tree has focus. */
+static void test_click_picks_lines(void) {
+  app* a = open_app("tests/data/sample.json", ".");
+
+  if (!a) return;
+
+  line(a, 0);
+  CHECK(mouse(a, APP_MOUSE_PRESS, 10, 4));
+  ASSERT_EQ(app_focused(a), FOCUS_TREE);
+  CHECK(selected(a, 4));
+  ASSERT_STREQ(status(a), "#0 .users[0].id");
+  mouse(a, APP_MOUSE_PRESS, 10, 4);
+  ASSERT_STREQ(line(a, 4), "        id: 1");
+
+  mouse(a, APP_MOUSE_PRESS, 4, 3);
+  CHECK(selected(a, 3));
+  ASSERT_STREQ(line(a, 3), "    " CLOSED "0: {3}");
+  ASSERT_STREQ(line(a, 4), "    " OPEN "1: {3}");
+  mouse(a, APP_MOUSE_PRESS, 20, 3);
+  ASSERT_STREQ(line(a, 3), "    " OPEN "0: {3}");
+
+  press(a, '\t');
+  mouse(a, APP_MOUSE_PRESS, 20, 3);
+  ASSERT_EQ(app_focused(a), FOCUS_TREE);
+  ASSERT_STREQ(line(a, 3), "    " OPEN "0: {3}");
+  app_free(a);
+
+  a = open_app("tests/data/sample.json", "1");
+  if (!a) return;
+
+  press(a, '\t');
+  line(a, 0);
+  CHECK(!mouse(a, APP_MOUSE_PRESS, 5, 5));
+  ASSERT_STREQ(status(a), "#0 .");
   app_free(a);
 }
 
@@ -527,6 +565,7 @@ static void test_path_quoting(void) {
 #define TESTS(f)                          \
   f(test_focus)                           \
   f(test_click_focuses)                   \
+  f(test_click_picks_lines)               \
   f(test_wheel_scrolls)                   \
   f(test_quit_keys)                       \
   f(test_navigation)                      \

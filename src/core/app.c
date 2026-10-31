@@ -251,9 +251,9 @@ static void tree_key(app* a, u32 key) {
   }
 }
 
-/* a press focuses the zone under it, or closes the help; the wheel
- * scrolls the tree under it without focusing it. true when the screen
- * changed. */
+/* a press focuses the zone under it and picks the tree line there, or
+ * closes the help; the wheel scrolls the tree under it without focusing
+ * it. true when the screen changed. */
 static b8 mouse(app* a, app_event ev) {
   app_focus was = a->focus;
   b8 in_tree = ev.y > 0 && ev.y < a->h - 1;
@@ -270,9 +270,10 @@ static b8 mouse(app* a, app_event ev) {
   }
 
   if (ev.y == 0) a->focus = FOCUS_QUERY;
-  else if (in_tree) a->focus = FOCUS_TREE;
+  if (!in_tree) return a->focus != was;
 
-  return a->focus != was;
+  a->focus = FOCUS_TREE;
+  return tree_click(a->tree, ev.x, ev.y - 1, was == FOCUS_TREE) || a->focus != was;
 }
 
 /* a file that cannot be read keeps the last data, with the reason shown. */
