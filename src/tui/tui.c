@@ -40,17 +40,13 @@ void tui_leave(void) {
 #endif
 }
 
-i32 tui_run(const char* path) {
-  app_opts o;
+i32 tui_run(const app_opts* opts) {
   char err[256];
   app* a;
   grid* g;
   b8 dirty = 1;
 
-  memset(&o, 0, sizeof(o));
-  o.path = path;
-  o.args = jv_invalid();
-  a = app_new(&o, err, sizeof(err));
+  a = app_new(opts, err, sizeof(err));
   if (!a) {
     fprintf(stderr, "livejq: %s\n", err);
     return 1;

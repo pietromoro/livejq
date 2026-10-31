@@ -6,6 +6,7 @@
 
 #include <curses.h>
 
+#include "cli.h"
 #include "defines.h"
 #include "tui.h"
 
@@ -14,14 +15,32 @@ static void probe_palette(void);
 static void probe_log(i32 row, const char* fmt, ...);
 
 int main(int argc, char** argv) {
+  cli_opts o;
+  char err[256];
+  char version[64];
+  cli_action action;
+
   if (argc == 2 && strcmp(argv[1], "--probe") == 0)
     return probe();
-  if (argc != 2) {
-    fprintf(stderr, "usage: livejq <file>\n");
+
+  action = cli_parse(argc, argv, &o, err, sizeof(err));
+  if (action == CLI_HELP) {
+    fputs(cli_usage, stdout);
+    return 0;
+  }
+
+  if (action == CLI_VERSION) {
+    cli_version(version, sizeof(version));
+    fputs(version, stdout);
+    return 0;
+  }
+
+  if (action == CLI_USAGE) {
+    fprintf(stderr, "livejq: %s\nusage: livejq [options] <file>, see livejq --help\n", err);
     return 2;
   }
 
-  return tui_run(argv[1]);
+  return tui_run(&o.app);
 }
 
 static i32 probe(void) {

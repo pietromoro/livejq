@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const jq_version = "1.8.2";
+pub const jq_version = "1.8.2";
 
 const vendor_flags: []const []const u8 = &.{ "-std=gnu99", "-w" };
 

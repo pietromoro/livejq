@@ -25,6 +25,8 @@ pub fn build(b: *std.Build) void {
   core_mod.addCSourceFiles(.{ .root = b.path("src/core"), .files = cSources(b, "src/core"), .flags = c_flags });
   core_mod.addCMacro("_POSIX_C_SOURCE", "200809L");
   if (target.result.os.tag == .macos) core_mod.addCMacro("_DARWIN_C_SOURCE", "1");
+  core_mod.addCMacro("LIVEJQ_VERSION", "\"" ++ @import("build.zig.zon").version ++ "\"");
+  core_mod.addCMacro("JQ_VERSION", "\"" ++ vendor.jq_version ++ "\"");
   core_mod.linkLibrary(jq);
   const core = b.addLibrary(.{ .name = "livejq_core", .root_module = core_mod });
 
