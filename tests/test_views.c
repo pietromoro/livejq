@@ -36,6 +36,8 @@ static void test_unhex(void);
 static void test_uuid(void);
 static void test_json(void);
 static void test_jwt(void);
+static void test_query(void);
+static b8 fields(const char* s, const char* json);
 static void test_offered(void);
 static void test_names(void);
 
@@ -55,6 +57,13 @@ static const char* shown_in(const char* json, view_id id, time_unit unit) {
   jv_free(text);
   jv_free(v);
   return buf;
+}
+
+/* whether string s has exactly the fields json in the query view. */
+static b8 fields(const char* s, const char* json) {
+  jv tree = view_tree(jv_string(s), VIEW_QUERY);
+
+  return jv_equal(tree, jv_parse(json));
 }
 
 /* the names of the views json is offered in, space separated. */
@@ -328,6 +337,25 @@ static void test_jwt(void) {
   ASSERT_STREQ(view_name(VIEW_JWT), "jwt");
 }
 
+static void test_query(void) {
+  CHECK(fields("a=1&b=two+words&c=%C3%A8", "{\"a\": \"1\", \"b\": \"two words\", \"c\": \"\xc3\xa8\"}"));
+  CHECK(fields("https://x.io/p?q=jq&tag=a&tag=b&tag=c#top", "{\"q\": \"jq\", \"tag\": [\"a\", \"b\", \"c\"]}"));
+  CHECK(fields("a=1&flag", "{\"a\": \"1\", \"flag\": \"\"}"));
+  CHECK(fields("a=1&&b=x=y&", "{\"a\": \"1\", \"b\": \"x=y\"}"));
+  CHECK(fields("?a%26b=%3D", "{\"a&b\": \"=\"}"));
+  CHECK(!view_applies(jv_string("aGVsbG8="), VIEW_QUERY));
+  CHECK(!view_applies(jv_string("a="), VIEW_QUERY));
+  CHECK(!view_applies(jv_string("=1"), VIEW_QUERY));
+  CHECK(!view_applies(jv_string("a=1&=2"), VIEW_QUERY));
+  CHECK(!view_applies(jv_string("a b=1"), VIEW_QUERY));
+  CHECK(!view_applies(jv_string("what?"), VIEW_QUERY));
+  CHECK(!view_applies(jv_string("a=%zz"), VIEW_QUERY));
+  CHECK(!view_applies(jv_string("a=%00"), VIEW_QUERY));
+  CHECK(!view_applies(jv_string("https://x.io/p"), VIEW_QUERY));
+  CHECK(!view_applies(jv_string("https://x.io/p#a=1"), VIEW_QUERY));
+  ASSERT_STREQ(view_name(VIEW_QUERY), "query");
+}
+
 static void test_offered(void) {
   ASSERT_STREQ(offered("42"), "default hex oct bin exp iec si dur utc local date ago");
   ASSERT_STREQ(offered("1.5"), "default exp dur");
@@ -341,6 +369,8 @@ static void test_offered(void) {
   ASSERT_STREQ(offered("\"017f22e2-79b0-7cc3-98c4-dc0c0c07398f\""), "default utc local date ago uuid");
   ASSERT_STREQ(offered("\"{\\\"a\\\": 1}\""), "default json");
   ASSERT_STREQ(offered("\"" TOKEN "\""), "default jwt");
+  ASSERT_STREQ(offered("\"a=1&b=2\""), "default query");
+  ASSERT_STREQ(offered("\"https://x.io/?q=%22a%22\""), "default url query");
   ASSERT_STREQ(offered("null"), "default");
   ASSERT_STREQ(offered("[1]"), "default");
 }
@@ -367,6 +397,7 @@ static void test_names(void) {
   f(test_uuid)                 \
   f(test_json)                 \
   f(test_jwt)                  \
+  f(test_query)                \
   f(test_offered)              \
   f(test_names)
 

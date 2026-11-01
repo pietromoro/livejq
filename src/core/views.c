@@ -76,6 +76,9 @@ static u64 be(const u8* b, i32 n);
 static jv embedded_json(jv v);
 static jv jwt(jv v);
 static jv jwt_part(const char* s, usz len);
+static jv query_string(jv v);
+static b8 add_field(jv* fields, const char* s, usz len);
+static jv unescape(const char* s, usz len, b8 form);
 
 static const char* const iec_units[] = { "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", NULL };
 static const char* const si_units[] = { "B", "kB", "MB", "GB", "TB", "PB", "EB", NULL };
@@ -138,6 +141,7 @@ const char* view_name(view_id id) {
     case VIEW_UUID: return "uuid";
     case VIEW_JSON: return "json";
     case VIEW_JWT: return "jwt";
+    case VIEW_QUERY: return "query";
     default: return "";
   }
 }
@@ -195,6 +199,7 @@ jv view_tree(jv v, view_id id) {
   switch (id) {
     case VIEW_JSON: return embedded_json(v);
     case VIEW_JWT: return jwt(v);
+    case VIEW_QUERY: return query_string(v);
     default: return jv_invalid();
   }
 }
@@ -205,6 +210,9 @@ const char* view_jq(view_id id) {
     case VIEW_JWT:
       return "split(\".\") | {header: .[0], payload: .[1]}"
              " | map_values(gsub(\"-\"; \"+\") | gsub(\"_\"; \"/\") | @base64d | fromjson)";
+    case VIEW_QUERY:
+      return "sub(\"^[^?]*\\\\?\"; \"\") | sub(\"#.*\"; \"\") | split(\"&\")"
+             " | map(select(. != \"\") | split(\"=\") | {(.[0]): (.[1:] | join(\"=\"))}) | add";
     default: return NULL;
   }
 }
@@ -723,34 +731,9 @@ static jv base64(jv v) {
 static jv url_decode(jv v) {
   const char* s = jv_string_value(v);
   usz len = (usz)jv_string_length_bytes(jv_copy(v));
-  u8* buf = malloc(len + 1);
-  usz n = 0;
-  b8 escaped = 0;
-  jv out = jv_invalid();
+  jv out = memchr(s, '%', len) ? unescape(s, len, 0) : jv_invalid();
 
-  for (usz i = 0; i < len; i++) {
-    if (s[i] != '%') {
-      buf[n++] = (u8)s[i];
-      continue;
-    }
-
-    i32 hi = i + 2 < len ? hex_digit(s[i + 1]) : -1;
-    i32 lo = hi >= 0 ? hex_digit(s[i + 2]) : -1;
-
-    if (lo < 0) {
-      free(buf);
-      return jv_invalid();
-    }
-
-    buf[n++] = (u8)(hi << 4 | lo);
-    escaped = 1;
-    i += 2;
-  }
-
-  if (escaped && is_text(buf, n)) out = jv_dump_string(jv_string_sized((const char*)buf, (i32)n), 0);
-
-  free(buf);
-  return out;
+  return jv_is_valid(out) ? jv_dump_string(out, 0) : out;
 }
 
 static i32 hex_digit(char c) {
@@ -1038,4 +1021,97 @@ static jv jwt_part(const char* s, usz len) {
 
   jv_free(out);
   return jv_invalid();
+}
+
+/* the fields of query string v, or of the query in url v, each name to its
+ * value, or to an array of them when it repeats. Needs a field with both a
+ * name and a value, so that base64 padding is no query. */
+static jv query_string(jv v) {
+  const char* s = jv_string_value(v);
+  const char* q = strchr(s, '?');
+  jv fields = jv_object();
+  b8 full = 0;
+
+  if (q) s = q + 1;
+
+  usz len = strcspn(s, "#");
+
+  for (usz i = 0; i < len; i++) {
+    if ((u8)s[i] <= ' ' || s[i] == 0x7f) {
+      jv_free(fields);
+      return jv_invalid();
+    }
+  }
+
+  for (usz i = 0; i < len;) {
+    usz n = strcspn(s + i, "&#");
+    const char* eq = memchr(s + i, '=', n);
+
+    if (n && !add_field(&fields, s + i, n)) {
+      jv_free(fields);
+      return jv_invalid();
+    }
+
+    full |= eq && eq > s + i && eq < s + i + n - 1;
+    i += n + 1;
+  }
+
+  if (full) return fields;
+
+  jv_free(fields);
+  return jv_invalid();
+}
+
+/* name=value, or a bare name for "", from len bytes at s into fields. */
+static b8 add_field(jv* fields, const char* s, usz len) {
+  const char* eq = memchr(s, '=', len);
+  usz klen = eq ? (usz)(eq - s) : len;
+  jv key = unescape(s, klen, 1);
+  jv val = eq ? unescape(eq + 1, len - klen - 1, 1) : jv_string("");
+
+  if (!jv_is_valid(key) || !jv_is_valid(val) || jv_string_length_bytes(jv_copy(key)) == 0) {
+    jv_free(key);
+    jv_free(val);
+    return 0;
+  }
+
+  jv old = jv_object_get(jv_copy(*fields), jv_copy(key));
+
+  if (jv_get_kind(old) == JV_KIND_ARRAY) val = jv_array_append(old, val);
+  else if (jv_is_valid(old)) val = jv_array_append(jv_array_append(jv_array(), old), val);
+  else jv_free(old);
+
+  *fields = jv_object_set(*fields, key, val);
+  return 1;
+}
+
+/* len bytes at s with their %XX escapes undone, and + as a space in form
+ * data, when the result is text. */
+static jv unescape(const char* s, usz len, b8 form) {
+  u8* buf = malloc(len + 1);
+  usz n = 0;
+  jv out = jv_invalid();
+
+  for (usz i = 0; i < len; i++) {
+    if (s[i] != '%') {
+      buf[n++] = form && s[i] == '+' ? ' ' : (u8)s[i];
+      continue;
+    }
+
+    i32 hi = i + 2 < len ? hex_digit(s[i + 1]) : -1;
+    i32 lo = hi >= 0 ? hex_digit(s[i + 2]) : -1;
+
+    if (lo < 0) {
+      free(buf);
+      return jv_invalid();
+    }
+
+    buf[n++] = (u8)(hi << 4 | lo);
+    i += 2;
+  }
+
+  if (is_text(buf, n)) out = jv_string_sized((const char*)buf, (i32)n);
+
+  free(buf);
+  return out;
 }

@@ -25,6 +25,7 @@ typedef enum {
   VIEW_UUID,     /* version, and time for the versions that hold one */
   VIEW_JSON,     /* a string holding an object or array, as that tree */
   VIEW_JWT,      /* a json web token's header and payload */
+  VIEW_QUERY,    /* a query string, or a url's, as its fields */
   VIEW_COUNT,
 } view_id;
 

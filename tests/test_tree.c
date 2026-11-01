@@ -58,6 +58,7 @@ static void test_view_keys(void);
 static void test_view_siblings(void);
 static void test_json_subtree(void);
 static void test_jwt_subtree(void);
+static void test_query_subtree(void);
 static void test_time_unit(void);
 
 static grid* screen;
@@ -788,6 +789,24 @@ static void test_jwt_subtree(void) {
   app_free(a);
 }
 
+static void test_query_subtree(void) {
+  app* a = open_app("tests/data/sample.json", "select(.ok) | {u: \"/s?q=a%20b&n=1&n=2\"}");
+
+  if (!a) return;
+
+  press(a, '\t');
+  type(a, "jd");
+  ASSERT_STREQ(row(a, 1), "    u: \"/s?q=a b&n=1&n=2\"  url");
+  press(a, 'd');
+  ASSERT_STREQ(row(a, 1), "  \xe2\x96\xbe u: {2}  query");
+  ASSERT_STREQ(row(a, 2), "      q: \"a b\"");
+  ASSERT_STREQ(row(a, 3), "    \xe2\x96\xbe n: [2]");
+  ASSERT_STREQ(row(a, 5), "        1: \"2\"");
+  press(a, 'd');
+  ASSERT_STREQ(row(a, 1), "    u: \"/s?q=a%20b&n=1&n=2\"");
+  app_free(a);
+}
+
 static void test_view_siblings(void) {
   app* a = open_app("tests/data/sample.json", "[.users[] | {id}]");
 
@@ -875,6 +894,7 @@ static void test_time_unit(void) {
   f(test_view_siblings)                   \
   f(test_json_subtree)                    \
   f(test_jwt_subtree)                     \
+  f(test_query_subtree)                   \
   f(test_time_unit)
 
 #define TEST_HELPER_MAIN
