@@ -273,7 +273,7 @@ static void tree_key(app* a, u32 key) {
       tree_view(a->tree, (view_id[]){ VIEW_UTC, VIEW_LOCAL, VIEW_DATE, VIEW_AGO }, 4);
       break;
     case 'd':
-      tree_view(a->tree, (view_id[]){ VIEW_BASE64, VIEW_URL, VIEW_UNHEX, VIEW_UUID, VIEW_JSON }, 5);
+      tree_view(a->tree, (view_id[]){ VIEW_BASE64, VIEW_URL, VIEW_UNHEX, VIEW_UUID, VIEW_JSON, VIEW_JWT }, 6);
       break;
     case 'u':
       tree_do(a->tree, TREE_UNIT_NEXT);

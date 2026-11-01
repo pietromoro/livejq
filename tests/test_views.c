@@ -12,6 +12,9 @@
 
 #include "test_helper.in"
 
+#define TOKEN                                                                                                 \
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1PjE_IiwiaWF0IjoxNzMwMzAwMDAwLCJleHAiOjE3MzAzMDM2MDAsIm4i" \
+  "OiJcdTAwZTgifQ.c2ln_-"
 #define NOW_MS 1730300000000 /* 2024-10-30T14:53:20Z */
 
 static const char* shown(const char* json, view_id id);
@@ -32,6 +35,7 @@ static void test_url(void);
 static void test_unhex(void);
 static void test_uuid(void);
 static void test_json(void);
+static void test_jwt(void);
 static void test_offered(void);
 static void test_names(void);
 
@@ -307,6 +311,23 @@ static void test_json(void) {
   jv_free(v);
 }
 
+static void test_jwt(void) {
+  jv tree = view_tree(jv_string(TOKEN), VIEW_JWT);
+  const char* json = "{\"header\": {\"alg\": \"HS256\", \"typ\": \"JWT\"}, \"payload\":"
+                     " {\"sub\": \"u>1?\", \"iat\": 1730300000, \"exp\": 1730303600, \"n\": \"\xc3\xa8\"}}";
+  jv want = jv_parse(json);
+
+  CHECK(jv_equal(tree, want));
+  CHECK(view_applies(jv_string("eyJhbGciOiJub25lIn0.eyJhIjoxfQ."), VIEW_JWT));
+  CHECK(!view_applies(jv_string("eyJhbGciOiJub25lIn0.eyJhIjoxfQ"), VIEW_JWT));
+  CHECK(!view_applies(jv_string("eyJhbGciOiJub25lIn0.eyJhIjoxfQ.a.b"), VIEW_JWT));
+  CHECK(!view_applies(jv_string("eyJhbGciOiJub25lIn0.eyJhIjoxfQ.a+b"), VIEW_JWT));
+  CHECK(!view_applies(jv_string("eyJhbGciOiJub25lIn0.WzFd.x"), VIEW_JWT));
+  CHECK(!view_applies(jv_string("a.b.c"), VIEW_JWT));
+  CHECK(!view_applies(jv_string(".."), VIEW_JWT));
+  ASSERT_STREQ(view_name(VIEW_JWT), "jwt");
+}
+
 static void test_offered(void) {
   ASSERT_STREQ(offered("42"), "default hex oct bin exp iec si dur utc local date ago");
   ASSERT_STREQ(offered("1.5"), "default exp dur");
@@ -319,6 +340,7 @@ static void test_offered(void) {
   ASSERT_STREQ(offered("\"919108f7-52d1-4320-9bac-f847db4148a8\""), "default uuid");
   ASSERT_STREQ(offered("\"017f22e2-79b0-7cc3-98c4-dc0c0c07398f\""), "default utc local date ago uuid");
   ASSERT_STREQ(offered("\"{\\\"a\\\": 1}\""), "default json");
+  ASSERT_STREQ(offered("\"" TOKEN "\""), "default jwt");
   ASSERT_STREQ(offered("null"), "default");
   ASSERT_STREQ(offered("[1]"), "default");
 }
@@ -344,6 +366,7 @@ static void test_names(void) {
   f(test_unhex)                \
   f(test_uuid)                 \
   f(test_json)                 \
+  f(test_jwt)                  \
   f(test_offered)              \
   f(test_names)
 

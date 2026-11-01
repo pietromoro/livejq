@@ -94,6 +94,7 @@ static void cycle_unit(tree* t);
 static void set_view(tree* t, view_id id, time_unit unit);
 static void spread_view(tree* t);
 static node* view_node(tree* t);
+static view_id implied_view(tree* t, i32 parent, jv key);
 static void pattern_of(const char* key, strbuf* b);
 static node* node_find(tree* t, const char* key);
 static node* node_at(tree* t, const char* key);
@@ -337,12 +338,12 @@ static void add_rows(tree* t, jv value, jv key, i32 parent, i32 depth) {
   }
 
   t->rows[r].value = value;
-  t->rows[r].derived = view_tree(value, shown->view);
   t->rows[r].key = key;
   t->rows[r].parent = parent;
   t->rows[r].depth = depth;
-  t->rows[r].view = shown->view;
+  t->rows[r].view = shown->key ? shown->view : implied_view(t, parent, key);
   t->rows[r].unit = shown->unit;
+  t->rows[r].derived = view_tree(value, t->rows[r].view);
   t->rows[r].open = is_open(t, &t->rows[r]);
   t->nrows++;
   match_cursor(t, r);
@@ -618,6 +619,21 @@ static node* view_node(tree* t) {
 
   pattern_of(t->key.s, &t->pattern);
   return node_find(t, t->pattern.s);
+}
+
+/* the view of a line no view was set on: dates for the time claims in a
+ * json web token's payload. */
+static view_id implied_view(tree* t, i32 parent, jv key) {
+  if (parent < 0 || t->rows[parent].parent < 0 || jv_get_kind(key) != JV_KIND_STRING) return VIEW_DEFAULT;
+
+  const row* payload = &t->rows[parent];
+  const row* token = &t->rows[payload->parent];
+  const char* name = jv_string_value(key);
+
+  if (token->view != VIEW_JWT || !jv_is_valid(token->derived) || strcmp(jv_string_value(payload->key), "payload") != 0)
+    return VIEW_DEFAULT;
+
+  return strcmp(name, "exp") == 0 || strcmp(name, "iat") == 0 || strcmp(name, "nbf") == 0 ? VIEW_DATE : VIEW_DEFAULT;
 }
 
 /* key without its indices, #3."a"[0] -> #."a"[], so that keys differing

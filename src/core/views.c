@@ -74,6 +74,8 @@ static b8 parse_uuid(jv v, u8* out);
 static b8 uuid_time(const u8* b, instant* at);
 static u64 be(const u8* b, i32 n);
 static jv embedded_json(jv v);
+static jv jwt(jv v);
+static jv jwt_part(const char* s, usz len);
 
 static const char* const iec_units[] = { "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", NULL };
 static const char* const si_units[] = { "B", "kB", "MB", "GB", "TB", "PB", "EB", NULL };
@@ -135,6 +137,7 @@ const char* view_name(view_id id) {
     case VIEW_UNHEX: return "unhex";
     case VIEW_UUID: return "uuid";
     case VIEW_JSON: return "json";
+    case VIEW_JWT: return "jwt";
     default: return "";
   }
 }
@@ -191,6 +194,7 @@ jv view_tree(jv v, view_id id) {
 
   switch (id) {
     case VIEW_JSON: return embedded_json(v);
+    case VIEW_JWT: return jwt(v);
     default: return jv_invalid();
   }
 }
@@ -198,6 +202,9 @@ jv view_tree(jv v, view_id id) {
 const char* view_jq(view_id id) {
   switch (id) {
     case VIEW_JSON: return "fromjson";
+    case VIEW_JWT:
+      return "split(\".\") | {header: .[0], payload: .[1]}"
+             " | map_values(gsub(\"-\"; \"+\") | gsub(\"_\"; \"/\") | @base64d | fromjson)";
     default: return NULL;
   }
 }
@@ -993,6 +1000,41 @@ static jv embedded_json(jv v) {
   jv_kind kind = jv_get_kind(out);
 
   if (kind == JV_KIND_OBJECT || kind == JV_KIND_ARRAY) return out;
+
+  jv_free(out);
+  return jv_invalid();
+}
+
+/* the header and payload of the json web token v: three base64url parts
+ * split by dots, the first two objects, the signature possibly empty. */
+static jv jwt(jv v) {
+  const char* s = jv_string_value(v);
+  const char* dot = strchr(s, '.');
+  const char* sig = dot ? strchr(dot + 1, '.') : NULL;
+
+  if (!sig || strspn(sig + 1, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") != strlen(sig + 1))
+    return jv_invalid();
+
+  jv header = jwt_part(s, (usz)(dot - s));
+  jv payload = jwt_part(dot + 1, (usz)(sig - dot - 1));
+
+  if (!jv_is_valid(header) || !jv_is_valid(payload)) {
+    jv_free(header);
+    jv_free(payload);
+    return jv_invalid();
+  }
+
+  return jv_object_set(jv_object_set(jv_object(), jv_string("header"), header), jv_string("payload"), payload);
+}
+
+/* the object len bytes of base64 at s hold. */
+static jv jwt_part(const char* s, usz len) {
+  u8* buf = malloc(len / 4 * 3 + 3);
+  i64 n = from_base64(s, len, buf);
+  jv out = n > 0 ? jv_parse_sized((const char*)buf, (i32)n) : jv_invalid();
+
+  free(buf);
+  if (jv_get_kind(out) == JV_KIND_OBJECT) return out;
 
   jv_free(out);
   return jv_invalid();

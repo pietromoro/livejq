@@ -10,6 +10,9 @@
 
 #include "test_helper.in"
 
+#define TOKEN                                                                                                 \
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1PjE_IiwiaWF0IjoxNzMwMzAwMDAwLCJleHAiOjE3MzAzMDM2MDAsIm4i" \
+  "OiJcdTAwZTgifQ.c2ln_-"
 #define W         60
 #define H         16
 #define TOP       4 /* the tree's first row */
@@ -54,6 +57,7 @@ static void test_view_kept_by_path(void);
 static void test_view_keys(void);
 static void test_view_siblings(void);
 static void test_json_subtree(void);
+static void test_jwt_subtree(void);
 static void test_time_unit(void);
 
 static grid* screen;
@@ -761,6 +765,29 @@ static void test_json_subtree(void) {
   app_free(a);
 }
 
+static void test_jwt_subtree(void) {
+  app* a = open_app("tests/data/sample.json", "select(.ok) | {t: \"" TOKEN "\"}");
+
+  if (!a) return;
+
+  press(a, '\t');
+  type(a, "jd");
+  ASSERT_STREQ(row(a, 1), "  \xe2\x96\xbe t: {2}  jwt");
+  ASSERT_STREQ(row(a, 2), "    \xe2\x96\xbe header: {2}");
+  ASSERT_STREQ(row(a, 3), "        alg: \"HS256\"");
+  ASSERT_STREQ(row(a, 6), "        sub: \"u>1?\"");
+  CHECK(strcmp(row(a, 7) + strlen(row(a, 7)) - 6, "  date") == 0);
+  CHECK(strcmp(row(a, 8) + strlen(row(a, 8)) - 6, "  date") == 0);
+  ASSERT_STREQ(row(a, 9), "        n: \"\xc3\xa8\"");
+  type(a, "jjjjjjjx");
+  ASSERT_STREQ(row(a, 8), "        exp: 0x67225670  hex");
+  press(a, '0');
+  ASSERT_STREQ(row(a, 8), "        exp: 1730303600");
+  press(a, 'k');
+  CHECK(strcmp(row(a, 7) + strlen(row(a, 7)) - 6, "  date") == 0);
+  app_free(a);
+}
+
 static void test_view_siblings(void) {
   app* a = open_app("tests/data/sample.json", "[.users[] | {id}]");
 
@@ -847,6 +874,7 @@ static void test_time_unit(void) {
   f(test_view_keys)                       \
   f(test_view_siblings)                   \
   f(test_json_subtree)                    \
+  f(test_jwt_subtree)                     \
   f(test_time_unit)
 
 #define TEST_HELPER_MAIN

@@ -24,6 +24,7 @@ typedef enum {
   VIEW_UNHEX,    /* hex digits as text, or as bytes */
   VIEW_UUID,     /* version, and time for the versions that hold one */
   VIEW_JSON,     /* a string holding an object or array, as that tree */
+  VIEW_JWT,      /* a json web token's header and payload */
   VIEW_COUNT,
 } view_id;
 
