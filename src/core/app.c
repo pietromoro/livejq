@@ -118,6 +118,7 @@ void app_free(app* a) {
 b8 app_feed(app* a, app_event ev) {
   b8 changed = ev.kind != EV_TICK;
 
+  tree_clock(a->tree, ev.wall_ms);
   switch (ev.kind) {
     case EV_KEY:
       key(a, ev);
@@ -269,7 +270,7 @@ static void tree_key(app* a, u32 key) {
       tree_view(a->tree, (view_id[]){ VIEW_EXPONENT }, 1);
       break;
     case 't':
-      tree_view(a->tree, (view_id[]){ VIEW_UTC, VIEW_LOCAL, VIEW_DATE }, 3);
+      tree_view(a->tree, (view_id[]){ VIEW_UTC, VIEW_LOCAL, VIEW_DATE, VIEW_AGO }, 4);
       break;
     default: break;
   }

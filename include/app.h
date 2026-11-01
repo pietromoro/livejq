@@ -51,7 +51,8 @@ typedef struct {
   app_mouse mouse;
   i32 x; /* the mouse's cell */
   i32 y;
-  i64 now_ms;
+  i64 now_ms;  /* monotonic */
+  i64 wall_ms; /* since the epoch */
 } app_event;
 
 typedef struct {

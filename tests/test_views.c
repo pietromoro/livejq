@@ -12,6 +12,8 @@
 
 #include "test_helper.in"
 
+#define NOW_MS 1730300000000 /* 2024-10-30T14:53:20Z */
+
 static const char* shown(const char* json, view_id id);
 static const char* offered(const char* json);
 static void test_bases(void);
@@ -20,6 +22,7 @@ static void test_exponent(void);
 static void test_bytes(void);
 static void test_duration(void);
 static void test_time(void);
+static void test_relative(void);
 static void test_offered(void);
 static void test_names(void);
 
@@ -27,7 +30,8 @@ static void test_names(void);
 static const char* shown(const char* json, view_id id) {
   static char buf[128];
   jv v = jv_parse(json);
-  jv text = view_text(v, id);
+  view_ctx ctx = { NOW_MS };
+  jv text = view_text(v, id, &ctx);
 
   if (jv_is_valid(text)) snprintf(buf, sizeof(buf), "%s", jv_string_value(text));
   else strcpy(buf, "-");
@@ -139,10 +143,23 @@ static void test_time(void) {
   ASSERT_STREQ(shown("0", VIEW_LOCAL), "1969-12-31 20:30:00 -03:30");
 }
 
+static void test_relative(void) {
+  ASSERT_STREQ(shown("1730300000", VIEW_AGO), "now");
+  ASSERT_STREQ(shown("1730299995", VIEW_AGO), "5s ago");
+  ASSERT_STREQ(shown("1730299910", VIEW_AGO), "1m 30s ago");
+  ASSERT_STREQ(shown("1730120000", VIEW_AGO), "2d 2h ago");
+  ASSERT_STREQ(shown("1730127200", VIEW_AGO), "2d ago");
+  ASSERT_STREQ(shown("1730300302", VIEW_AGO), "in 5m 2s");
+  ASSERT_STREQ(shown("1730299999500", VIEW_AGO), "1s ago");
+  ASSERT_STREQ(shown("1730300000999", VIEW_AGO), "now");
+  ASSERT_STREQ(shown("0", VIEW_AGO), "20026d 14h ago");
+  ASSERT_STREQ(shown("1.5", VIEW_AGO), "-");
+}
+
 static void test_offered(void) {
-  ASSERT_STREQ(offered("42"), "default hex oct bin exp iec si dur utc local date");
+  ASSERT_STREQ(offered("42"), "default hex oct bin exp iec si dur utc local date ago");
   ASSERT_STREQ(offered("1.5"), "default exp dur");
-  ASSERT_STREQ(offered("0"), "default hex oct bin iec si dur utc local date");
+  ASSERT_STREQ(offered("0"), "default hex oct bin iec si dur utc local date ago");
   ASSERT_STREQ(offered("\"hello\""), "default");
   ASSERT_STREQ(offered("null"), "default");
   ASSERT_STREQ(offered("[1]"), "default");
@@ -160,6 +177,7 @@ static void test_names(void) {
   f(test_bytes)                \
   f(test_duration)             \
   f(test_time)                 \
+  f(test_relative)             \
   f(test_offered)              \
   f(test_names)
 

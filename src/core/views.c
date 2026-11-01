@@ -36,6 +36,7 @@ static jv bytes(i64 n, f64 base, const char* const* units);
 static jv duration(f64 d);
 static jv short_duration(f64 d);
 static jv timestamp(i64 n, view_id id);
+static jv relative(i64 n, i64 now_ms);
 static instant to_instant(i64 n);
 static void split(i64 t, civil* c);
 static i64 days_of(i64 y, i32 m, i32 d);
@@ -53,7 +54,7 @@ i32 views_of(jv v, view_id* out, i32 cap) {
   i32 n = 0;
 
   for (i32 id = 0; id < VIEW_COUNT && n < cap; id++) {
-    jv text = id == VIEW_DEFAULT ? jv_true() : view_text(v, (view_id)id);
+    jv text = id == VIEW_DEFAULT ? jv_true() : view_text(v, (view_id)id, NULL);
 
     if (jv_is_valid(text)) out[n++] = (view_id)id;
 
@@ -75,11 +76,12 @@ const char* view_name(view_id id) {
     case VIEW_UTC: return "utc";
     case VIEW_LOCAL: return "local";
     case VIEW_DATE: return "date";
+    case VIEW_AGO: return "ago";
     default: return "";
   }
 }
 
-jv view_text(jv v, view_id id) {
+jv view_text(jv v, view_id id, const view_ctx* ctx) {
   i64 n;
 
   if (jv_get_kind(v) != JV_KIND_NUMBER) return jv_invalid();
@@ -95,6 +97,7 @@ jv view_text(jv v, view_id id) {
     case VIEW_UTC:
     case VIEW_LOCAL:
     case VIEW_DATE: return as_int(v, &n) ? timestamp(n, id) : jv_invalid();
+    case VIEW_AGO: return as_int(v, &n) ? relative(n, ctx ? ctx->now_ms : 0) : jv_invalid();
     default: return jv_invalid();
   }
 }
@@ -291,6 +294,36 @@ static jv timestamp(i64 n, view_id id) {
       c.year, c.hour, c.min, c.sec
     );
   }
+
+  return jv_string(buf);
+}
+
+/* n against now as its two largest parts, 2d 3h ago or in 5m 2s. */
+static jv relative(i64 n, i64 now_ms) {
+  static const i64 sizes[] = { DAY, 3600, 60, 1 };
+  instant at = to_instant(n);
+  i64 now = now_ms >= 0 ? now_ms / 1000 : (now_ms - 999) / 1000;
+  i64 d = now - at.sec;
+  u64 m = d < 0 ? (u64)0 - (u64)d : (u64)d;
+  char buf[64];
+  usz len = 0;
+  i32 parts = 0;
+
+  if (m == 0) return jv_string("now");
+
+  if (d < 0) len += (usz)snprintf(buf, sizeof(buf), "in ");
+  for (i32 i = 0; i < 4 && parts < 2; i++) {
+    if (m < (u64)sizes[i] && parts == 0) continue;
+
+    if (m < (u64)sizes[i]) break;
+
+    len += (usz)snprintf(buf + len, sizeof(buf) - len, "%" PRIu64 "%c ", m / (u64)sizes[i], "dhms"[i]);
+    m %= (u64)sizes[i];
+    parts++;
+  }
+
+  if (d > 0) snprintf(buf + len, sizeof(buf) - len, "ago");
+  else buf[len - 1] = '\0';
 
   return jv_string(buf);
 }

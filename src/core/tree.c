@@ -64,6 +64,8 @@ struct tree {
   i32 top;
   i32 page;
 
+  view_ctx ctx;
+
   strbuf key;     /* path of the row being built */
   strbuf pattern; /* its rule's key */
   i32 best;       /* deepest row on the way to cursor_key */
@@ -201,6 +203,8 @@ void tree_do(tree* t, tree_op op) {
   remember_cursor(t);
 }
 
+void tree_clock(tree* t, i64 wall_ms) { t->ctx.now_ms = wall_ms; }
+
 void tree_view(tree* t, const view_id* ids, i32 n) {
   i32 at = -1;
 
@@ -210,7 +214,7 @@ void tree_view(tree* t, const view_id* ids, i32 n) {
     if (ids[i] == t->rows[t->cursor].view) at = i;
 
   for (i32 i = at + 1; i < n; i++) {
-    jv text = view_text(t->rows[t->cursor].value, ids[i]);
+    jv text = view_text(t->rows[t->cursor].value, ids[i], NULL);
     b8 applies = jv_is_valid(text);
 
     jv_free(text);
@@ -672,7 +676,7 @@ static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag
     return;
   }
 
-  text = w->view == VIEW_DEFAULT ? jv_invalid() : view_text(w->value, w->view);
+  text = w->view == VIEW_DEFAULT ? jv_invalid() : view_text(w->value, w->view, &t->ctx);
   if (!jv_is_valid(text)) {
     jv_free(text);
     text = jv_dump_string(jv_copy(w->value), 0);

@@ -101,6 +101,13 @@ i64 clock_us(void) {
   return (i64)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
 }
 
+i64 clock_wall_ms(void) {
+  struct timespec ts;
+
+  clock_gettime(CLOCK_REALTIME, &ts);
+  return (i64)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
 static void* trampoline(void* p) {
   thread* t = p;
 

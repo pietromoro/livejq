@@ -26,5 +26,7 @@ i32 atomic_get(const i32* p);
 void atomic_set(i32* p, i32 v);
 
 i64 clock_us(void);
+/* Milliseconds since the epoch, for showing times relative to now. */
+i64 clock_wall_ms(void);
 
 #endif /* LIVEJQ_THREAD_H */

@@ -34,6 +34,9 @@ void tree_free(tree* t);
  * cursor by path. */
 void tree_set(tree* t, jv outputs);
 void tree_do(tree* t, tree_op op);
+/* The wall clock, in milliseconds since the epoch, for times shown
+ * relative to now. */
+void tree_clock(tree* t, i64 wall_ms);
 /* Steps the cursor's value through the n views in ids, then back to the
  * value as jq prints it, skipping the views that do not apply. Nothing
  * happens when none applies and the value is in none of them. */

@@ -17,6 +17,7 @@
 #define ROWS      (H - TOP - 2)
 #define QUERY_X   4 /* the query's first column, after the prompt */
 #define SETTLE_MS 5000
+#define WALL_MS   1730300090000 /* 90 s after the sample's ts */
 #define OPEN      "\xe2\x96\xbe "
 #define CLOSED    "\xe2\x96\xb8 "
 
@@ -72,16 +73,16 @@ static app* open_app(const char* path, const char* query) {
 }
 
 static void press(app* a, u32 key) {
-  app_event ev;
+  app_event ev = { 0 };
 
   ev.kind = EV_KEY;
   ev.key = key;
-  ev.now_ms = 0;
+  ev.wall_ms = WALL_MS;
   app_feed(a, ev);
 }
 
 static b8 mouse(app* a, app_mouse m, i32 x, i32 y) {
-  app_event ev;
+  app_event ev = { 0 };
 
   ev.kind = EV_MOUSE;
   ev.mouse = m;
@@ -92,10 +93,10 @@ static b8 mouse(app* a, app_mouse m, i32 x, i32 y) {
 }
 
 static void type(app* a, const char* s) {
-  app_event ev;
+  app_event ev = { 0 };
 
   ev.kind = EV_KEY;
-  ev.now_ms = 0;
+  ev.wall_ms = WALL_MS;
   while (*s) {
     ev.key = (u8)*s++;
     app_feed(a, ev);
@@ -510,7 +511,7 @@ static void test_cursor_falls_back_to_ancestor(void) {
 static void test_reload_keeps_state(void) {
   const char* dir = getenv("TMPDIR");
   char path[512];
-  app_event ev;
+  app_event ev = { 0 };
   app* a;
 
   snprintf(path, sizeof(path), "%s/livejq-tree-%" PRId64 ".json", dir ? dir : "/tmp", clock_us());
@@ -627,6 +628,8 @@ static void test_view_cycling(void) {
   press(a, 'V');
   press(a, 'V');
   ASSERT_STREQ(row(a, 3), "    ts: 1730300000");
+  press(a, 'V');
+  ASSERT_STREQ(row(a, 3), "    ts: 1m 30s ago  ago");
   type(a, "VVV");
   ASSERT_STREQ(row(a, 3), "    ts: 2024-10-30T14:53:20Z  utc");
   press(a, '0');
@@ -697,6 +700,8 @@ static void test_view_keys(void) {
   ASSERT_STREQ(row(a, 1), "    a: 2024-10-30T14:53:20Z  utc");
   type(a, "tt");
   CHECK(strcmp(row(a, 1) + strlen(row(a, 1)) - 6, "  date") == 0);
+  press(a, 't');
+  ASSERT_STREQ(row(a, 1), "    a: 1m 30s ago  ago");
   press(a, 't');
   ASSERT_STREQ(row(a, 1), "    a: 1730300000");
   type(a, "xt");

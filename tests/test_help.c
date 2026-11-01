@@ -35,7 +35,7 @@ static app* open_app(const char* path) {
 }
 
 static void press(app* a, u32 key) {
-  app_event ev;
+  app_event ev = { 0 };
 
   ev.kind = EV_KEY;
   ev.key = key;

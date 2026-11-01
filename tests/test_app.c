@@ -59,7 +59,7 @@ static app* open_app(const char* path, const char* query, b8 raw, b8 slurp, jv a
 }
 
 static void type(app* a, const char* s, i64 now) {
-  app_event ev;
+  app_event ev = { 0 };
 
   ev.kind = EV_KEY;
   ev.now_ms = now;
@@ -70,7 +70,7 @@ static void type(app* a, const char* s, i64 now) {
 }
 
 static void retype(app* a, const char* s) {
-  app_event ev;
+  app_event ev = { 0 };
 
   ev.kind = EV_KEY;
   ev.key = APP_KEY_BACKSPACE;
@@ -288,7 +288,7 @@ static void test_debounce(void) {
  * draws only then. */
 static void test_changed_only_when_shown(void) {
   app* a = open_app("tests/data/sample.json", ".", 0, 0, jv_invalid(), 0);
-  app_event ev;
+  app_event ev = { 0 };
   i64 deadline = clock_us() / 1000 + SETTLE_MS;
   b8 changed = 0;
 

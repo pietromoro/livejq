@@ -83,6 +83,7 @@ i32 tui_run(const app_opts* opts) {
     ev.kind = EV_TICK;
     ev.key = 0;
     ev.now_ms = clock_us() / 1000;
+    ev.wall_ms = clock_wall_ms();
     if (kind == KEY_CODE_YES && ch == KEY_RESIZE) {
       resize_term(0, 0);
       grid_free(g);
