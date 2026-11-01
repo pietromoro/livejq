@@ -15,13 +15,14 @@ typedef enum {
   VIEW_BYTES,    /* 1024-based units */
   VIEW_BYTES_SI, /* 1000-based units */
   VIEW_DURATION, /* the number as seconds */
-  VIEW_UTC,      /* integers as times, the unit guessed from their size, and dates */
+  VIEW_UTC,      /* integers as times, the unit guessed from their size, dates and uuids */
   VIEW_LOCAL,
   VIEW_DATE,
   VIEW_AGO,
   VIEW_BASE64,   /* base64 or base64url as text, or as bytes */
   VIEW_URL,      /* percent-encoding undone */
   VIEW_UNHEX,    /* hex digits as text, or as bytes */
+  VIEW_UUID,     /* version, and time for the versions that hold one */
   VIEW_COUNT,
 } view_id;
 

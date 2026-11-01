@@ -30,6 +30,7 @@ static void test_rfc2822_strings(void);
 static void test_base64(void);
 static void test_url(void);
 static void test_unhex(void);
+static void test_uuid(void);
 static void test_offered(void);
 static void test_names(void);
 
@@ -267,6 +268,26 @@ static void test_unhex(void) {
   ASSERT_STREQ(shown("\"d41d8cd98f00b204e9800998ecf8427e\"", VIEW_BASE64), "-");
 }
 
+static void test_uuid(void) {
+  ASSERT_STREQ(shown("\"919108f7-52d1-4320-9bac-f847db4148a8\"", VIEW_UUID), "v4");
+  ASSERT_STREQ(shown("\"017F22E2-79B0-7CC3-98C4-DC0C0C07398F\"", VIEW_UUID), "v7 2022-02-22T19:22:22.000Z");
+  ASSERT_STREQ(shown("\"C232AB00-9414-11EC-B3C8-9F6BDECED846\"", VIEW_UUID), "v1 2022-02-22T19:22:22.0000000Z");
+  ASSERT_STREQ(shown("\"1EC9414C-232A-6B00-B3C8-9F6BDECED846\"", VIEW_UUID), "v6 2022-02-22T19:22:22.0000000Z");
+  ASSERT_STREQ(shown("\"00000000-0000-0000-0000-000000000000\"", VIEW_UUID), "nil");
+  ASSERT_STREQ(shown("\"FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF\"", VIEW_UUID), "max");
+  ASSERT_STREQ(shown("\"919108f7-52d1-4320-cbac-f847db4148a8\"", VIEW_UUID), "microsoft");
+  ASSERT_STREQ(shown("\"919108f7-52d1-4320-1bac-f847db4148a8\"", VIEW_UUID), "ncs");
+  ASSERT_STREQ(shown("\"919108f752d143209bacf847db4148a8\"", VIEW_UUID), "-");
+  ASSERT_STREQ(shown("\"919108f7-52d1-4320-9bac-f847db4148ag\"", VIEW_UUID), "-");
+  ASSERT_STREQ(shown("\"919108f7-52d14-320-9bac-f847db4148a8\"", VIEW_UUID), "-");
+  ASSERT_STREQ(shown("42", VIEW_UUID), "-");
+  ASSERT_STREQ(shown("\"017F22E2-79B0-7CC3-98C4-DC0C0C07398F\"", VIEW_UTC), "2022-02-22T19:22:22.000Z");
+  ASSERT_STREQ(shown("\"017F22E2-79B0-7CC3-98C4-DC0C0C07398F\"", VIEW_AGO), "980d 19h ago");
+  ASSERT_STREQ(shown("\"C232AB00-9414-11EC-B3C8-9F6BDECED846\"", VIEW_UTC), "2022-02-22T19:22:22.0000000Z");
+  ASSERT_STREQ(shown("\"919108f7-52d1-4320-9bac-f847db4148a8\"", VIEW_UTC), "-");
+  ASSERT_STREQ(shown("\"919108f7-52d1-4320-9bac-f847db4148a8\"", VIEW_BASE64), "-");
+}
+
 static void test_offered(void) {
   ASSERT_STREQ(offered("42"), "default hex oct bin exp iec si dur utc local date ago");
   ASSERT_STREQ(offered("1.5"), "default exp dur");
@@ -276,6 +297,8 @@ static void test_offered(void) {
   ASSERT_STREQ(offered("\"aGVsbG8gd29ybGQ=\""), "default b64");
   ASSERT_STREQ(offered("\"a%20b\""), "default url");
   ASSERT_STREQ(offered("\"d41d8cd98f00b204e9800998ecf8427e\""), "default unhex");
+  ASSERT_STREQ(offered("\"919108f7-52d1-4320-9bac-f847db4148a8\""), "default uuid");
+  ASSERT_STREQ(offered("\"017f22e2-79b0-7cc3-98c4-dc0c0c07398f\""), "default utc local date ago uuid");
   ASSERT_STREQ(offered("null"), "default");
   ASSERT_STREQ(offered("[1]"), "default");
 }
@@ -299,6 +322,7 @@ static void test_names(void) {
   f(test_base64)               \
   f(test_url)                  \
   f(test_unhex)                \
+  f(test_uuid)                 \
   f(test_offered)              \
   f(test_names)
 

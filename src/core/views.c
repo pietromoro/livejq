@@ -15,6 +15,7 @@
 #define MIN_BINARY  16  /* base64 shorter than this must decode to text */
 #define MIN_HEX     8   /* hex digits below this get no view */
 #define MAX_DUMP    256 /* bytes shown as hex, the rest cut */
+#define GREGORIAN   122192928000000000 /* 100 ns ticks from 1582-10-15 to the epoch */
 
 /* a moment, from a number whose unit was guessed. */
 typedef struct {
@@ -67,6 +68,11 @@ static i64 from_base64(const char* s, usz len, u8* out);
 static i32 base64_digit(char c, char* alphabet);
 static b8 is_text(const u8* b, usz len);
 static jv hex_dump(const u8* b, usz len);
+static jv uuid(jv v);
+static b8 uuid_instant(jv v, instant* at);
+static b8 parse_uuid(jv v, u8* out);
+static b8 uuid_time(const u8* b, instant* at);
+static u64 be(const u8* b, i32 n);
 
 static const char* const iec_units[] = { "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", NULL };
 static const char* const si_units[] = { "B", "kB", "MB", "GB", "TB", "PB", "EB", NULL };
@@ -121,6 +127,7 @@ const char* view_name(view_id id) {
     case VIEW_BASE64: return "b64";
     case VIEW_URL: return "url";
     case VIEW_UNHEX: return "unhex";
+    case VIEW_UUID: return "uuid";
     default: return "";
   }
 }
@@ -145,7 +152,9 @@ jv view_text(jv v, view_id id, const view_ctx* ctx) {
   if (jv_get_kind(v) == JV_KIND_STRING && is_time(id)) {
     const char* s = jv_string_value(v);
 
-    return parse_iso(s, &at) || parse_rfc2822(s, &at) ? in_time(at, id, ctx) : jv_invalid();
+    if (!parse_iso(s, &at) && !parse_rfc2822(s, &at) && !uuid_instant(v, &at)) return jv_invalid();
+
+    return in_time(at, id, ctx);
   }
 
   if (jv_get_kind(v) == JV_KIND_STRING && id == VIEW_BASE64) return base64(v);
@@ -153,6 +162,8 @@ jv view_text(jv v, view_id id, const view_ctx* ctx) {
   if (jv_get_kind(v) == JV_KIND_STRING && id == VIEW_URL) return url_decode(v);
 
   if (jv_get_kind(v) == JV_KIND_STRING && id == VIEW_UNHEX) return unhex(v);
+
+  if (jv_get_kind(v) == JV_KIND_STRING && id == VIEW_UUID) return uuid(v);
 
   if (jv_get_kind(v) != JV_KIND_NUMBER) return jv_invalid();
 
@@ -661,8 +672,13 @@ static void put_trimmed(char* buf, usz cap, f64 v, i32 dec) {
 
 /* the bytes v decodes to from base64, as a string when they are text and as
  * hex otherwise; short strings must be text, since most words decode, and
- * so must hex strings, which unhex reads instead. */
+ * so must hex strings, which unhex reads instead. A uuid is base64url too,
+ * and never meant as such. */
 static jv base64(jv v) {
+  u8 id[16];
+
+  if (parse_uuid(v, id)) return jv_invalid();
+
   usz len = (usz)jv_string_length_bytes(jv_copy(v));
   u8* buf = malloc(len / 4 * 3 + 3);
   i64 n = from_base64(jv_string_value(v), len, buf);
@@ -849,4 +865,104 @@ static jv hex_dump(const u8* b, usz len) {
   if (len > MAX_DUMP) snprintf(buf + n, sizeof(buf) - n, " \xe2\x80\xa6");
 
   return jv_string(buf);
+}
+
+/* v's uuid version, with its time in UTC when it holds one; nil, max, or
+ * the variant's name when it is not RFC 9562's. */
+static jv uuid(jv v) {
+  static const char* const variants[] = { "ncs", "ncs", "ncs", "ncs", "", "", "microsoft", "future" };
+  u8 b[16];
+  b8 zero = 1;
+  b8 ones = 1;
+
+  if (!parse_uuid(v, b)) return jv_invalid();
+
+  for (i32 i = 0; i < 16; i++) {
+    zero &= b[i] == 0;
+    ones &= b[i] == 0xff;
+  }
+
+  if (zero || ones) return jv_string(zero ? "nil" : "max");
+
+  if ((b[8] & 0xc0) != 0x80) return jv_string(variants[b[8] >> 5]);
+
+  instant at;
+  char buf[48];
+
+  if (!uuid_time(b, &at)) {
+    snprintf(buf, sizeof(buf), "v%d", b[6] >> 4);
+    return jv_string(buf);
+  }
+
+  jv time = timestamp(at, VIEW_UTC);
+
+  snprintf(buf, sizeof(buf), "v%d %s", b[6] >> 4, jv_is_valid(time) ? jv_string_value(time) : "");
+  jv_free(time);
+  return jv_string(buf);
+}
+
+/* the time a v1, v6 or v7 uuid string holds. */
+static b8 uuid_instant(jv v, instant* at) {
+  u8 b[16];
+
+  return parse_uuid(v, b) && uuid_time(b, at);
+}
+
+/* v in the 8-4-4-4-12 hex form, either case, into out. */
+static b8 parse_uuid(jv v, u8* out) {
+  const char* s = jv_string_value(v);
+  usz n = 0;
+
+  if (jv_get_kind(v) != JV_KIND_STRING || jv_string_length_bytes(jv_copy(v)) != 36) return 0;
+
+  for (usz i = 0; i < 36; i++) {
+    if (i == 8 || i == 13 || i == 18 || i == 23) {
+      if (s[i] != '-') return 0;
+
+      continue;
+    }
+
+    i32 d = hex_digit(s[i]);
+
+    if (d < 0) return 0;
+
+    out[n / 2] = (u8)(n % 2 ? out[n / 2] << 4 | d : d);
+    n++;
+  }
+
+  return 1;
+}
+
+/* the time in uuid b: unix milliseconds for v7, 100 ns ticks since the
+ * gregorian reform for v1 and v6, which only order their fields apart. */
+static b8 uuid_time(const u8* b, instant* at) {
+  i32 version = b[6] >> 4;
+  u64 t;
+
+  if ((b[8] & 0xc0) != 0x80) return 0;
+
+  if (version == 7) {
+    *at = to_instant((i64)be(b, 6), UNIT_MS);
+    return 1;
+  }
+
+  if (version == 1) t = (be(b + 6, 2) & 0xfff) << 48 | be(b + 4, 2) << 32 | be(b, 4);
+  else if (version == 6) t = be(b, 6) << 12 | (be(b + 6, 2) & 0xfff);
+  else return 0;
+
+  i64 ticks = (i64)t - GREGORIAN;
+
+  at->sec = ticks >= 0 ? ticks / 10000000 : (ticks - 9999999) / 10000000;
+  at->frac = ticks - at->sec * 10000000;
+  at->digits = 7;
+  return 1;
+}
+
+/* n bytes at b as a big-endian integer. */
+static u64 be(const u8* b, i32 n) {
+  u64 t = 0;
+
+  for (i32 i = 0; i < n; i++) t = t << 8 | b[i];
+
+  return t;
 }
