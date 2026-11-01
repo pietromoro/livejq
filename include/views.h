@@ -21,6 +21,7 @@ typedef enum {
   VIEW_AGO,
   VIEW_BASE64,   /* base64 or base64url as text, or as bytes */
   VIEW_URL,      /* percent-encoding undone */
+  VIEW_UNHEX,    /* hex digits as text, or as bytes */
   VIEW_COUNT,
 } view_id;
 

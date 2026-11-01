@@ -13,6 +13,7 @@
 #define MAX_SECONDS 1e15               /* its milliseconds still fit an i64 */
 #define DAY         86400
 #define MIN_BINARY  16  /* base64 shorter than this must decode to text */
+#define MIN_HEX     8   /* hex digits below this get no view */
 #define MAX_DUMP    256 /* bytes shown as hex, the rest cut */
 
 /* a moment, from a number whose unit was guessed. */
@@ -60,6 +61,8 @@ static void put_trimmed(char* buf, usz cap, f64 v, i32 dec);
 static jv base64(jv v);
 static jv url_decode(jv v);
 static i32 hex_digit(char c);
+static jv unhex(jv v);
+static i64 from_hex(const char* s, usz len, u8* out);
 static i64 from_base64(const char* s, usz len, u8* out);
 static i32 base64_digit(char c, char* alphabet);
 static b8 is_text(const u8* b, usz len);
@@ -117,6 +120,7 @@ const char* view_name(view_id id) {
     case VIEW_AGO: return "ago";
     case VIEW_BASE64: return "b64";
     case VIEW_URL: return "url";
+    case VIEW_UNHEX: return "unhex";
     default: return "";
   }
 }
@@ -147,6 +151,8 @@ jv view_text(jv v, view_id id, const view_ctx* ctx) {
   if (jv_get_kind(v) == JV_KIND_STRING && id == VIEW_BASE64) return base64(v);
 
   if (jv_get_kind(v) == JV_KIND_STRING && id == VIEW_URL) return url_decode(v);
+
+  if (jv_get_kind(v) == JV_KIND_STRING && id == VIEW_UNHEX) return unhex(v);
 
   if (jv_get_kind(v) != JV_KIND_NUMBER) return jv_invalid();
 
@@ -654,15 +660,17 @@ static void put_trimmed(char* buf, usz cap, f64 v, i32 dec) {
 }
 
 /* the bytes v decodes to from base64, as a string when they are text and as
- * hex otherwise; short strings must be text, since most words decode. */
+ * hex otherwise; short strings must be text, since most words decode, and
+ * so must hex strings, which unhex reads instead. */
 static jv base64(jv v) {
   usz len = (usz)jv_string_length_bytes(jv_copy(v));
   u8* buf = malloc(len / 4 * 3 + 3);
   i64 n = from_base64(jv_string_value(v), len, buf);
+  b8 binary = len >= MIN_BINARY && from_hex(jv_string_value(v), len, NULL) < 0;
   jv out = jv_invalid();
 
   if (n > 0 && is_text(buf, (usz)n)) out = jv_dump_string(jv_string_sized((const char*)buf, (i32)n), 0);
-  else if (n > 0 && len >= MIN_BINARY) out = hex_dump(buf, (usz)n);
+  else if (n > 0 && binary) out = hex_dump(buf, (usz)n);
 
   free(buf);
   return out;
@@ -711,6 +719,47 @@ static i32 hex_digit(char c) {
   if (c >= 'A' && c <= 'F') return c - 'A' + 10;
 
   return -1;
+}
+
+/* the bytes v's hex digits spell, as a string when they are text and as
+ * spaced hex otherwise. Shorter than MIN_HEX, too many words and numbers
+ * would qualify. */
+static jv unhex(jv v) {
+  usz len = (usz)jv_string_length_bytes(jv_copy(v));
+
+  if (len < MIN_HEX) return jv_invalid();
+
+  u8* buf = malloc(len / 2 + 1);
+  i64 n = from_hex(jv_string_value(v), len, buf);
+  jv out = jv_invalid();
+
+  if (n > 0 && is_text(buf, (usz)n)) out = jv_dump_string(jv_string_sized((const char*)buf, (i32)n), 0);
+  else if (n > 0) out = hex_dump(buf, (usz)n);
+
+  free(buf);
+  return out;
+}
+
+/* s as pairs of hex digits after an optional 0x, into out unless it is
+ * NULL. Returns the byte count, -1 when s is not that. */
+static i64 from_hex(const char* s, usz len, u8* out) {
+  if (len > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+    s += 2;
+    len -= 2;
+  }
+
+  if (len == 0 || len % 2) return -1;
+
+  for (usz i = 0; i < len; i += 2) {
+    i32 hi = hex_digit(s[i]);
+    i32 lo = hex_digit(s[i + 1]);
+
+    if (hi < 0 || lo < 0) return -1;
+
+    if (out) out[i / 2] = (u8)(hi << 4 | lo);
+  }
+
+  return (i64)(len / 2);
 }
 
 /* s in base64 or base64url, padded or not, into out. Returns the byte

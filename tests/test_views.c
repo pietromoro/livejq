@@ -29,6 +29,7 @@ static void test_iso_strings(void);
 static void test_rfc2822_strings(void);
 static void test_base64(void);
 static void test_url(void);
+static void test_unhex(void);
 static void test_offered(void);
 static void test_names(void);
 
@@ -252,6 +253,20 @@ static void test_url(void) {
   ASSERT_STREQ(shown("\"%C3\"", VIEW_URL), "-");
 }
 
+static void test_unhex(void) {
+  ASSERT_STREQ(shown("\"68656c6c6f\"", VIEW_UNHEX), "\"hello\"");
+  ASSERT_STREQ(shown("\"0x48494A4b\"", VIEW_UNHEX), "\"HIJK\"");
+  ASSERT_STREQ(shown("\"6869\"", VIEW_UNHEX), "-");
+  ASSERT_STREQ(shown("\"deadbeef\"", VIEW_UNHEX), "de ad be ef");
+  ASSERT_STREQ(shown("\"0xdeadbeef\"", VIEW_UNHEX), "de ad be ef");
+  ASSERT_STREQ(shown("\"dead\"", VIEW_UNHEX), "-");
+  ASSERT_STREQ(shown("\"1234\"", VIEW_UNHEX), "-");
+  ASSERT_STREQ(shown("\"deadbee\"", VIEW_UNHEX), "-");
+  ASSERT_STREQ(shown("\"deadbeeg\"", VIEW_UNHEX), "-");
+  ASSERT_STREQ(shown("\"0x\"", VIEW_UNHEX), "-");
+  ASSERT_STREQ(shown("\"d41d8cd98f00b204e9800998ecf8427e\"", VIEW_BASE64), "-");
+}
+
 static void test_offered(void) {
   ASSERT_STREQ(offered("42"), "default hex oct bin exp iec si dur utc local date ago");
   ASSERT_STREQ(offered("1.5"), "default exp dur");
@@ -260,6 +275,7 @@ static void test_offered(void) {
   ASSERT_STREQ(offered("\"2024-10-30\""), "default utc local date ago");
   ASSERT_STREQ(offered("\"aGVsbG8gd29ybGQ=\""), "default b64");
   ASSERT_STREQ(offered("\"a%20b\""), "default url");
+  ASSERT_STREQ(offered("\"d41d8cd98f00b204e9800998ecf8427e\""), "default unhex");
   ASSERT_STREQ(offered("null"), "default");
   ASSERT_STREQ(offered("[1]"), "default");
 }
@@ -282,6 +298,7 @@ static void test_names(void) {
   f(test_rfc2822_strings)      \
   f(test_base64)               \
   f(test_url)                  \
+  f(test_unhex)                \
   f(test_offered)              \
   f(test_names)
 
