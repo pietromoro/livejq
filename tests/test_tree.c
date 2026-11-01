@@ -48,6 +48,7 @@ static void test_page_up_and_down(void);
 static void test_query_edit_keeps_state(void);
 static void test_cursor_falls_back_to_ancestor(void);
 static void test_reload_keeps_state(void);
+static void test_reload_keeps_views(void);
 static void test_default_expansion(void);
 static void test_single_root_unlabeled(void);
 static void test_truncation(void);
@@ -552,6 +553,35 @@ static void test_reload_keeps_state(void) {
   app_free(a);
 }
 
+static void test_reload_keeps_views(void) {
+  const char* dir = getenv("TMPDIR");
+  char path[512];
+  app_event ev = { 0 };
+  app* a;
+
+  snprintf(path, sizeof(path), "%s/livejq-views-%" PRId64 ".json", dir ? dir : "/tmp", clock_us());
+  write_file(path, "{\"n\":255,\"s\":\"{\\\"k\\\":1}\"}");
+  a = open_app(path, ".");
+  if (!a) return;
+
+  press(a, '\t');
+  type(a, "jxjd");
+  ASSERT_STREQ(row(a, 1), "    n: 0xff  hex");
+  ASSERT_STREQ(row(a, 2), "  " OPEN "s: {1}  json");
+
+  write_file(path, "{\"n\":4096,\"s\":\"{\\\"k\\\":2,\\\"m\\\":3}\"}");
+  ev.kind = EV_FILE_CHANGED;
+  app_feed(a, ev);
+  CHECK(app_settle(a, SETTLE_MS));
+  ASSERT_STREQ(row(a, 1), "    n: 0x1000  hex");
+  ASSERT_STREQ(row(a, 2), "  " OPEN "s: {2}  json");
+  ASSERT_STREQ(row(a, 3), "      k: 2");
+  ASSERT_STREQ(row(a, 4), "      m: 3");
+  ASSERT_STREQ(status(a), ".s");
+  remove(path);
+  app_free(a);
+}
+
 static void test_default_expansion(void) {
   app* a = open_app("tests/data/sample.json", "select(.ok) | {a: [range(2000)], b: [1]}");
 
@@ -884,6 +914,7 @@ static void test_time_unit(void) {
   f(test_query_edit_keeps_state)          \
   f(test_cursor_falls_back_to_ancestor)   \
   f(test_reload_keeps_state)              \
+  f(test_reload_keeps_views)              \
   f(test_default_expansion)               \
   f(test_single_root_unlabeled)           \
   f(test_truncation)                      \
