@@ -31,6 +31,7 @@ struct app {
   tree* tree;
   app_focus focus;
   b8 help;         /* the overlay is shown */
+  help_view help_at;
   b8 quit;
   i32 h;           /* rows of the last render */
 
@@ -158,7 +159,7 @@ void app_render(app* a, grid* g) {
   help_bar(g, g->h - 1, a->focus);
   if (!a->help) return;
 
-  help_render(g, a->focus);
+  help_render(g, a->focus, &a->help_at);
   g->cursor_x = -1;
 }
 
@@ -173,12 +174,13 @@ static void key(app* a, app_event ev) {
   }
 
   if (a->help) {
-    a->help = 0;
+    a->help = help_key(&a->help_at, ev.key);
     return;
   }
 
   if (ev.key == APP_KEY_F1 || (ev.key == '?' && a->focus == FOCUS_TREE)) {
     a->help = 1;
+    a->help_at.top = 0;
     return;
   }
 
@@ -289,14 +291,17 @@ static void tree_key(app* a, u32 key) {
 }
 
 /* a press focuses the zone under it and picks the tree line there, or
- * closes the help; the wheel scrolls the tree under it without focusing
- * it. true when the screen changed. */
+ * closes the help; the wheel scrolls the help, or the tree under it
+ * without focusing it. true when the screen changed. */
 static b8 mouse(app* a, app_event ev) {
   app_focus was = a->focus;
   b8 in_tree = ev.y >= TREE_Y && ev.y < a->h - 2;
 
+  if (ev.mouse != APP_MOUSE_PRESS && a->help)
+    return help_scroll(&a->help_at, ev.mouse == APP_MOUSE_WHEEL_UP ? -WHEEL_ROWS : WHEEL_ROWS);
+
   if (ev.mouse != APP_MOUSE_PRESS) {
-    if (a->help || !in_tree) return 0;
+    if (!in_tree) return 0;
 
     return tree_scroll(a->tree, ev.mouse == APP_MOUSE_WHEEL_UP ? -WHEEL_ROWS : WHEEL_ROWS);
   }

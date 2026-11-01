@@ -5,9 +5,22 @@
 #include "app.h"
 #include "grid.h"
 
-/* Draws a box centered over g with the keys of the zone focus, clipped when
- * g is too small. */
-void help_render(grid* g, app_focus focus);
+/* how far the overlay is scrolled, and how far it can be, as of its last
+ * render. */
+typedef struct {
+  i32 top;  /* first row shown */
+  i32 max;  /* top at the last row */
+  i32 page; /* rows shown */
+} help_view;
+
+/* Draws a box centered over g with the keys of the zone focus, from row
+ * v->top on, scrolled when g is too small for all of them. Clamps v->top and
+ * sets v->max and v->page. */
+void help_render(grid* g, app_focus focus, help_view* v);
+/* Scrolls v for key: rows, pages and ends. False when key does not scroll. */
+b8 help_key(help_view* v, u32 key);
+/* Scrolls v by n rows. False when it was already at that end. */
+b8 help_scroll(help_view* v, i32 n);
 /* Draws the main keys of the zone focus on row y, as many as fit. */
 void help_bar(grid* g, i32 y, app_focus focus);
 
