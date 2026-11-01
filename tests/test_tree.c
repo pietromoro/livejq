@@ -721,6 +721,10 @@ static void test_view_keys(void) {
   ASSERT_STREQ(row(a, 3), "    ts: 1.73 GB  si");
   press(a, 's');
   ASSERT_STREQ(row(a, 3), "    ts: 1730300000");
+  press(a, 'D');
+  ASSERT_STREQ(row(a, 3), "    ts: 20026d 14h 53m 20s  dur");
+  press(a, 'D');
+  ASSERT_STREQ(row(a, 3), "    ts: 1730300000");
   press(a, 'o');
   press(a, 'e');
   ASSERT_STREQ(row(a, 3), "    ts: 1.7303e9  exp");

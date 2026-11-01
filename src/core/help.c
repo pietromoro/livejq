@@ -32,6 +32,7 @@ static const entry tree_keys[] = {
     { "pgup pgdn", "page" },
     { "v V", "next / previous view" },
     { "x o b e", "hex / octal / binary / exponent, again: back" },
+    { "D", "duration in seconds, again: back" },
     { "s", "size in iec / si units, then back" },
     { "t", "utc / local / date / ago, then back" },
     { "d", "base64 url hex uuid json jwt query, then back" },
