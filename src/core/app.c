@@ -269,6 +269,9 @@ static void tree_key(app* a, u32 key) {
     case 'e':
       tree_view(a->tree, (view_id[]){ VIEW_EXPONENT }, 1);
       break;
+    case 's':
+      tree_view(a->tree, (view_id[]){ VIEW_BYTES, VIEW_BYTES_SI }, 2);
+      break;
     case 't':
       tree_view(a->tree, (view_id[]){ VIEW_UTC, VIEW_LOCAL, VIEW_DATE, VIEW_AGO }, 4);
       break;
