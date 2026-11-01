@@ -52,6 +52,7 @@ static void test_cursor_falls_back_to_ancestor(void);
 static void test_reload_keeps_state(void);
 static void test_reload_keeps_views(void);
 static void test_watch_reloads(void);
+static void test_watch_keeps_last_good(void);
 static void test_default_expansion(void);
 static void test_single_root_unlabeled(void);
 static void test_truncation(void);
@@ -625,6 +626,37 @@ static void test_watch_reloads(void) {
   app_free(a);
 }
 
+static void test_watch_keeps_last_good(void) {
+  const char* dir = getenv("TMPDIR");
+  char path[512];
+  app* a;
+
+  snprintf(path, sizeof(path), "%s/livejq-midwrite-%" PRId64 ".json", dir ? dir : "/tmp", clock_us());
+  write_file(path, "{\"a\":1,\"b\":2}");
+  a = open_watched(path, ".", 1000);
+  if (!a) return;
+
+  tick(a, 0);
+  write_file(path, "{\"a\":3,\"b\":");
+  CHECK(tick(a, 1000));
+  CHECK(app_settle(a, SETTLE_MS));
+  ASSERT_STREQ(row(a, 1), "    a: 1");
+  ASSERT_STREQ(row(a, 2), "    b: 2");
+  CHECK(strstr(line(a, H - 2), "Unfinished") != NULL);
+  ASSERT_EQ(grid_at(screen, 1, H - 2).style, STYLE_PILL_ERROR);
+
+  CHECK(!tick(a, 2000));
+  write_file(path, "{\"a\":3,\"b\":4}");
+  tick(a, 3000);
+  CHECK(app_settle(a, SETTLE_MS));
+  ASSERT_STREQ(row(a, 1), "    a: 3");
+  ASSERT_STREQ(row(a, 2), "    b: 4");
+  CHECK(strstr(line(a, H - 2), "Unfinished") == NULL);
+  ASSERT_EQ(grid_at(screen, 1, H - 2).style, STYLE_PILL);
+  remove(path);
+  app_free(a);
+}
+
 static void test_default_expansion(void) {
   app* a = open_app("tests/data/sample.json", "select(.ok) | {a: [range(2000)], b: [1]}");
 
@@ -979,6 +1011,7 @@ static void test_time_unit(void) {
   f(test_reload_keeps_state)              \
   f(test_reload_keeps_views)              \
   f(test_watch_reloads)                   \
+  f(test_watch_keeps_last_good)           \
   f(test_default_expansion)               \
   f(test_single_root_unlabeled)           \
   f(test_truncation)                      \

@@ -55,7 +55,7 @@ struct app {
 static void key(app* a, app_event ev);
 static void tree_key(app* a, u32 key);
 static b8 mouse(app* a, app_event ev);
-static void poll(app* a, i64 now);
+static b8 poll(app* a, i64 now);
 static void reload(app* a);
 static b8 edit(app* a, u32 key);
 static void submit(app* a);
@@ -132,7 +132,7 @@ b8 app_feed(app* a, app_event ev) {
       break;
     case EV_TICK:
       if (a->edited && ev.now_ms >= a->submit_at) submit(a);
-      if (a->watch_ms) poll(a, ev.now_ms);
+      changed = a->watch_ms && poll(a, ev.now_ms);
       break;
     case EV_FILE_CHANGED:
       reload(a);
@@ -325,18 +325,23 @@ static b8 mouse(app* a, app_event ev) {
   return tree_click(a->tree, ev.x - TREE_X, ev.y - TREE_Y, was == FOCUS_TREE) || a->focus != was;
 }
 
-static void poll(app* a, i64 now) {
+/* true when the file changed and was read again. */
+static b8 poll(app* a, i64 now) {
+  b8 first = a->poll_at == 0;
   file_stamp st;
 
-  if (a->poll_at && now < a->poll_at) return;
-
-  if (a->poll_at && file_stat(a->path, &st) && (st.mtime_ns != a->stamp.mtime_ns || st.size != a->stamp.size))
-    reload(a);
+  if (!first && now < a->poll_at) return 0;
 
   a->poll_at = now + a->watch_ms;
+  if (first || !file_stat(a->path, &st)) return 0;
+  if (st.mtime_ns == a->stamp.mtime_ns && st.size == a->stamp.size) return 0;
+
+  reload(a);
+  return 1;
 }
 
-/* a file that cannot be read keeps the last data, with the reason shown. */
+/* a file that cannot be read or parsed keeps the last data, with the
+ * reason shown. */
 static void reload(app* a) {
   load_result loaded;
   file_stamp stamp;
@@ -350,6 +355,11 @@ static void reload(app* a) {
 
   a->stamp = stamp;
   a->load_error = loaded.error;
+  if (jv_get_kind(loaded.error) == JV_KIND_STRING) {
+    jv_free(loaded.inputs);
+    return;
+  }
+
   eval_set_inputs(a->ev, loaded.inputs);
   submit(a);
 }
