@@ -28,6 +28,7 @@ static void test_units(void);
 static void test_iso_strings(void);
 static void test_rfc2822_strings(void);
 static void test_base64(void);
+static void test_url(void);
 static void test_offered(void);
 static void test_names(void);
 
@@ -237,6 +238,20 @@ static void test_base64(void) {
   ASSERT_STREQ(shown("42", VIEW_BASE64), "-");
 }
 
+static void test_url(void) {
+  ASSERT_STREQ(shown("\"hello%20world\"", VIEW_URL), "\"hello world\"");
+  ASSERT_STREQ(shown("\"a%2Fb%2fc+d\"", VIEW_URL), "\"a/b/c+d\"");
+  ASSERT_STREQ(shown("\"%C3%A8t%C3%A0\"", VIEW_URL), "\"\xc3\xa8t\xc3\xa0\"");
+  ASSERT_STREQ(shown("\"https://x.io/?q=%22a%22\"", VIEW_URL), "\"https://x.io/?q=\\\"a\\\"\"");
+  ASSERT_STREQ(shown("\"line%0Abreak\"", VIEW_URL), "\"line\\nbreak\"");
+  ASSERT_STREQ(shown("\"plain\"", VIEW_URL), "-");
+  ASSERT_STREQ(shown("\"100%\"", VIEW_URL), "-");
+  ASSERT_STREQ(shown("\"50%2\"", VIEW_URL), "-");
+  ASSERT_STREQ(shown("\"%zz\"", VIEW_URL), "-");
+  ASSERT_STREQ(shown("\"%00\"", VIEW_URL), "-");
+  ASSERT_STREQ(shown("\"%C3\"", VIEW_URL), "-");
+}
+
 static void test_offered(void) {
   ASSERT_STREQ(offered("42"), "default hex oct bin exp iec si dur utc local date ago");
   ASSERT_STREQ(offered("1.5"), "default exp dur");
@@ -244,6 +259,7 @@ static void test_offered(void) {
   ASSERT_STREQ(offered("\"hello\""), "default");
   ASSERT_STREQ(offered("\"2024-10-30\""), "default utc local date ago");
   ASSERT_STREQ(offered("\"aGVsbG8gd29ybGQ=\""), "default b64");
+  ASSERT_STREQ(offered("\"a%20b\""), "default url");
   ASSERT_STREQ(offered("null"), "default");
   ASSERT_STREQ(offered("[1]"), "default");
 }
@@ -265,6 +281,7 @@ static void test_names(void) {
   f(test_iso_strings)          \
   f(test_rfc2822_strings)      \
   f(test_base64)               \
+  f(test_url)                  \
   f(test_offered)              \
   f(test_names)
 

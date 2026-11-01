@@ -58,6 +58,8 @@ static b8 local_tm(time_t t, struct tm* out);
 static f64 round3(f64 v, i32* dec);
 static void put_trimmed(char* buf, usz cap, f64 v, i32 dec);
 static jv base64(jv v);
+static jv url_decode(jv v);
+static i32 hex_digit(char c);
 static i64 from_base64(const char* s, usz len, u8* out);
 static i32 base64_digit(char c, char* alphabet);
 static b8 is_text(const u8* b, usz len);
@@ -114,6 +116,7 @@ const char* view_name(view_id id) {
     case VIEW_DATE: return "date";
     case VIEW_AGO: return "ago";
     case VIEW_BASE64: return "b64";
+    case VIEW_URL: return "url";
     default: return "";
   }
 }
@@ -142,6 +145,8 @@ jv view_text(jv v, view_id id, const view_ctx* ctx) {
   }
 
   if (jv_get_kind(v) == JV_KIND_STRING && id == VIEW_BASE64) return base64(v);
+
+  if (jv_get_kind(v) == JV_KIND_STRING && id == VIEW_URL) return url_decode(v);
 
   if (jv_get_kind(v) != JV_KIND_NUMBER) return jv_invalid();
 
@@ -661,6 +666,51 @@ static jv base64(jv v) {
 
   free(buf);
   return out;
+}
+
+/* v with its %XX escapes undone, when it has one and the result is text.
+ * A + stays a +, as outside form data. */
+static jv url_decode(jv v) {
+  const char* s = jv_string_value(v);
+  usz len = (usz)jv_string_length_bytes(jv_copy(v));
+  u8* buf = malloc(len + 1);
+  usz n = 0;
+  b8 escaped = 0;
+  jv out = jv_invalid();
+
+  for (usz i = 0; i < len; i++) {
+    if (s[i] != '%') {
+      buf[n++] = (u8)s[i];
+      continue;
+    }
+
+    i32 hi = i + 2 < len ? hex_digit(s[i + 1]) : -1;
+    i32 lo = hi >= 0 ? hex_digit(s[i + 2]) : -1;
+
+    if (lo < 0) {
+      free(buf);
+      return jv_invalid();
+    }
+
+    buf[n++] = (u8)(hi << 4 | lo);
+    escaped = 1;
+    i += 2;
+  }
+
+  if (escaped && is_text(buf, n)) out = jv_dump_string(jv_string_sized((const char*)buf, (i32)n), 0);
+
+  free(buf);
+  return out;
+}
+
+static i32 hex_digit(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+
+  return -1;
 }
 
 /* s in base64 or base64url, padded or not, into out. Returns the byte
