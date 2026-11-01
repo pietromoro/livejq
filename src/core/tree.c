@@ -201,20 +201,26 @@ void tree_do(tree* t, tree_op op) {
   remember_cursor(t);
 }
 
-void tree_view(tree* t, view_id id) {
-  jv text;
+void tree_view(tree* t, const view_id* ids, i32 n) {
+  i32 at = -1;
 
   if (t->nrows == 0) return;
 
-  if (t->rows[t->cursor].view == id) {
-    set_view(t, VIEW_DEFAULT);
-    return;
+  for (i32 i = 0; i < n; i++)
+    if (ids[i] == t->rows[t->cursor].view) at = i;
+
+  for (i32 i = at + 1; i < n; i++) {
+    jv text = view_text(t->rows[t->cursor].value, ids[i]);
+    b8 applies = jv_is_valid(text);
+
+    jv_free(text);
+    if (applies) {
+      set_view(t, ids[i]);
+      return;
+    }
   }
 
-  text = view_text(t->rows[t->cursor].value, id);
-  if (jv_is_valid(text)) set_view(t, id);
-
-  jv_free(text);
+  if (at >= 0) set_view(t, VIEW_DEFAULT);
 }
 
 b8 tree_scroll(tree* t, i32 n) {

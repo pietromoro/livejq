@@ -34,9 +34,10 @@ void tree_free(tree* t);
  * cursor by path. */
 void tree_set(tree* t, jv outputs);
 void tree_do(tree* t, tree_op op);
-/* Shows the cursor's value in view id, or as jq prints it when it is in
- * that view already. Nothing happens when the view does not apply. */
-void tree_view(tree* t, view_id id);
+/* Steps the cursor's value through the n views in ids, then back to the
+ * value as jq prints it, skipping the views that do not apply. Nothing
+ * happens when none applies and the value is in none of them. */
+void tree_view(tree* t, const view_id* ids, i32 n);
 /* Moves the view by n rows, dragging the cursor along only to keep it in
  * view. False when the view was already at that end. */
 b8 tree_scroll(tree* t, i32 n);

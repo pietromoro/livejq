@@ -689,6 +689,18 @@ static void test_view_keys(void) {
   ASSERT_STREQ(row(a, 1), "    a: 1.5e0  exp");
   press(a, 'x');
   ASSERT_STREQ(row(a, 1), "    a: 1.5e0  exp");
+  press(a, 't');
+  ASSERT_STREQ(row(a, 1), "    a: 1.5e0  exp");
+
+  retype(a, "{a: 1730300000}");
+  press(a, 't');
+  ASSERT_STREQ(row(a, 1), "    a: 2024-10-30T14:53:20Z  utc");
+  type(a, "tt");
+  CHECK(strcmp(row(a, 1) + strlen(row(a, 1)) - 6, "  date") == 0);
+  press(a, 't');
+  ASSERT_STREQ(row(a, 1), "    a: 1730300000");
+  type(a, "xt");
+  ASSERT_STREQ(row(a, 1), "    a: 2024-10-30T14:53:20Z  utc");
   app_free(a);
 }
 

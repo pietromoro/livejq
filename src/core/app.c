@@ -257,16 +257,19 @@ static void tree_key(app* a, u32 key) {
       tree_do(a->tree, TREE_VIEW_SIBLINGS);
       break;
     case 'x':
-      tree_view(a->tree, VIEW_HEX);
+      tree_view(a->tree, (view_id[]){ VIEW_HEX }, 1);
       break;
     case 'o':
-      tree_view(a->tree, VIEW_OCTAL);
+      tree_view(a->tree, (view_id[]){ VIEW_OCTAL }, 1);
       break;
     case 'b':
-      tree_view(a->tree, VIEW_BINARY);
+      tree_view(a->tree, (view_id[]){ VIEW_BINARY }, 1);
       break;
     case 'e':
-      tree_view(a->tree, VIEW_EXPONENT);
+      tree_view(a->tree, (view_id[]){ VIEW_EXPONENT }, 1);
+      break;
+    case 't':
+      tree_view(a->tree, (view_id[]){ VIEW_UTC, VIEW_LOCAL, VIEW_DATE }, 3);
       break;
     default: break;
   }
