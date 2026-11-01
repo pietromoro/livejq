@@ -707,6 +707,20 @@ static void test_view_keys(void) {
   ASSERT_STREQ(row(a, 1), "    a: 1730300000");
   type(a, "xt");
   ASSERT_STREQ(row(a, 1), "    a: 2024-10-30T14:53:20Z  utc");
+  press(a, 'd');
+  ASSERT_STREQ(row(a, 1), "    a: 2024-10-30T14:53:20Z  utc");
+
+  retype(a, "{a: \"68656c6c6f\"}");
+  press(a, 'd');
+  ASSERT_STREQ(row(a, 1), "    a: \"hello\"  unhex");
+  press(a, 'd');
+  ASSERT_STREQ(row(a, 1), "    a: \"68656c6c6f\"");
+
+  retype(a, "{a: \"017f22e2-79b0-7cc3-98c4-dc0c0c07398f\"}");
+  press(a, 'd');
+  ASSERT_STREQ(row(a, 1), "    a: v7 2022-02-22T19:22:22.000Z  uuid");
+  press(a, 't');
+  ASSERT_STREQ(row(a, 1), "    a: 2022-02-22T19:22:22.000Z  utc");
   app_free(a);
 }
 
