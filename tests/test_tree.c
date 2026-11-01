@@ -628,7 +628,7 @@ static void test_view_cycling(void) {
   press(a, 'V');
   ASSERT_STREQ(row(a, 3), "    ts: 1730300000");
   press(a, 'V');
-  ASSERT_STREQ(row(a, 3), "    ts: 1.7303e9  exp");
+  ASSERT_STREQ(row(a, 3), "    ts: 1.73 GB  si");
   press(a, '0');
   ASSERT_STREQ(row(a, 3), "    ts: 1730300000");
 

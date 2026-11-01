@@ -13,6 +13,7 @@ static const char* offered(const char* json);
 static void test_bases(void);
 static void test_negative_and_huge(void);
 static void test_exponent(void);
+static void test_bytes(void);
 static void test_offered(void);
 static void test_names(void);
 
@@ -80,10 +81,26 @@ static void test_exponent(void) {
   ASSERT_STREQ(shown("0", VIEW_EXPONENT), "-");
 }
 
+static void test_bytes(void) {
+  ASSERT_STREQ(shown("1572864", VIEW_BYTES), "1.5 MiB");
+  ASSERT_STREQ(shown("1572864", VIEW_BYTES_SI), "1.57 MB");
+  ASSERT_STREQ(shown("1000", VIEW_BYTES), "1000 B");
+  ASSERT_STREQ(shown("1000", VIEW_BYTES_SI), "1 kB");
+  ASSERT_STREQ(shown("1536", VIEW_BYTES), "1.5 KiB");
+  ASSERT_STREQ(shown("1536", VIEW_BYTES_SI), "1.54 kB");
+  ASSERT_STREQ(shown("0", VIEW_BYTES), "0 B");
+  ASSERT_STREQ(shown("-2048", VIEW_BYTES), "-2 KiB");
+  ASSERT_STREQ(shown("123456", VIEW_BYTES), "121 KiB");
+  ASSERT_STREQ(shown("1048575", VIEW_BYTES), "1 MiB");
+  ASSERT_STREQ(shown("999999", VIEW_BYTES_SI), "1 MB");
+  ASSERT_STREQ(shown("9223372036854775807", VIEW_BYTES), "8 EiB");
+  ASSERT_STREQ(shown("1.5", VIEW_BYTES), "-");
+}
+
 static void test_offered(void) {
-  ASSERT_STREQ(offered("42"), "default hex oct bin exp");
+  ASSERT_STREQ(offered("42"), "default hex oct bin exp iec si");
   ASSERT_STREQ(offered("1.5"), "default exp");
-  ASSERT_STREQ(offered("0"), "default hex oct bin");
+  ASSERT_STREQ(offered("0"), "default hex oct bin iec si");
   ASSERT_STREQ(offered("\"hello\""), "default");
   ASSERT_STREQ(offered("null"), "default");
   ASSERT_STREQ(offered("[1]"), "default");
@@ -98,6 +115,7 @@ static void test_names(void) {
   f(test_bases)                \
   f(test_negative_and_huge)    \
   f(test_exponent)             \
+  f(test_bytes)                \
   f(test_offered)              \
   f(test_names)
 

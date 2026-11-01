@@ -1,5 +1,6 @@
 /* views - pure functions from a value to the ways it can be shown. */
 #include <errno.h>
+#include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +13,12 @@
 static b8 as_int(jv v, i64* out);
 static jv in_base(i64 n, u32 base, const char* prefix);
 static jv exponent(f64 d);
+static jv bytes(i64 n, f64 base, const char* const* units);
+static f64 round3(f64 v, i32* dec);
+static void put_trimmed(char* buf, usz cap, f64 v, i32 dec);
+
+static const char* const iec_units[] = { "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", NULL };
+static const char* const si_units[] = { "B", "kB", "MB", "GB", "TB", "PB", "EB", NULL };
 
 i32 views_of(jv v, view_id* out, i32 cap) {
   i32 n = 0;
@@ -33,6 +40,8 @@ const char* view_name(view_id id) {
     case VIEW_OCTAL: return "oct";
     case VIEW_BINARY: return "bin";
     case VIEW_EXPONENT: return "exp";
+    case VIEW_BYTES: return "iec";
+    case VIEW_BYTES_SI: return "si";
     default: return "";
   }
 }
@@ -47,6 +56,8 @@ jv view_text(jv v, view_id id) {
     case VIEW_OCTAL: return as_int(v, &n) ? in_base(n, 8, "0o") : jv_invalid();
     case VIEW_BINARY: return as_int(v, &n) ? in_base(n, 2, "0b") : jv_invalid();
     case VIEW_EXPONENT: return exponent(jv_number_value(v));
+    case VIEW_BYTES: return as_int(v, &n) ? bytes(n, 1024, iec_units) : jv_invalid();
+    case VIEW_BYTES_SI: return as_int(v, &n) ? bytes(n, 1000, si_units) : jv_invalid();
     default: return jv_invalid();
   }
 }
@@ -107,4 +118,54 @@ static jv exponent(f64 d) {
   *e = '\0';
   snprintf(out, sizeof(out), "%se%d", buf, atoi(e + 1));
   return jv_string(out);
+}
+
+/* n bytes in the largest unit it reaches, to three significant digits. */
+static jv bytes(i64 n, f64 base, const char* const* units) {
+  f64 v = fabs((f64)n);
+  i32 u = 0;
+  i32 dec;
+  char num[32];
+  char buf[48];
+
+  if (v < base) {
+    snprintf(buf, sizeof(buf), "%" PRId64 " B", n);
+    return jv_string(buf);
+  }
+
+  while (v >= base && units[u + 1]) {
+    v /= base;
+    u++;
+  }
+
+  v = round3(v, &dec);
+  if (v >= base && units[u + 1]) {
+    v = round3(v / base, &dec);
+    u++;
+  }
+
+  put_trimmed(num, sizeof(num), v, dec);
+  snprintf(buf, sizeof(buf), "%s%s %s", n < 0 ? "-" : "", num, units[u]);
+  return jv_string(buf);
+}
+
+/* v rounded to three significant digits, dec of them after the point. */
+static f64 round3(f64 v, i32* dec) {
+  f64 scale;
+
+  *dec = v >= 100 ? 0 : v >= 10 ? 1 : 2;
+  scale = pow(10, *dec);
+  return round(v * scale) / scale;
+}
+
+/* v with dec decimals, less its trailing zeros. */
+static void put_trimmed(char* buf, usz cap, f64 v, i32 dec) {
+  usz len;
+
+  snprintf(buf, cap, "%.*f", dec, v);
+  if (!strchr(buf, '.')) return;
+
+  len = strlen(buf);
+  while (buf[len - 1] == '0') buf[--len] = '\0';
+  if (buf[len - 1] == '.') buf[--len] = '\0';
 }
