@@ -34,6 +34,7 @@ typedef struct {
   char* key; /* NULL when the slot is free */
   fold fold;
   view_id view;
+  b8 viewed; /* view set on this path, overriding the rule */
 } node;
 
 typedef struct {
@@ -63,8 +64,9 @@ struct tree {
   i32 top;
   i32 page;
 
-  strbuf key; /* path of the row being built */
-  i32 best;   /* deepest row on the way to cursor_key */
+  strbuf key;     /* path of the row being built */
+  strbuf pattern; /* its rule's key */
+  i32 best;       /* deepest row on the way to cursor_key */
   usz best_len;
 };
 
@@ -83,6 +85,9 @@ static void row_key(tree* t, i32 r);
 static void key_segment(strbuf* b, jv key, i32 depth);
 static void cycle_view(tree* t, i32 step);
 static void set_view(tree* t, view_id id);
+static void spread_view(tree* t);
+static view_id view_for(tree* t);
+static void pattern_of(const char* key, strbuf* b);
 static node* node_find(tree* t, const char* key);
 static node* node_at(tree* t, const char* key);
 static void fold_set(tree* t, const char* key, b8 open);
@@ -120,6 +125,7 @@ void tree_free(tree* t) {
   free(t->nodes);
   free(t->cursor_key);
   free(t->key.s);
+  free(t->pattern.s);
   free(t);
 }
 
@@ -182,6 +188,9 @@ void tree_do(tree* t, tree_op op) {
       break;
     case TREE_VIEW_RESET:
       cycle_view(t, 0);
+      break;
+    case TREE_VIEW_SIBLINGS:
+      spread_view(t);
       break;
   }
 
@@ -314,7 +323,7 @@ static void add_rows(tree* t, jv value, jv key, i32 parent, i32 depth) {
   t->rows[r].parent = parent;
   t->rows[r].depth = depth;
   t->rows[r].open = is_open(t, value, depth);
-  t->rows[r].view = node_find(t, t->key.s)->view;
+  t->rows[r].view = view_for(t);
   t->nrows++;
   match_cursor(t, r);
 
@@ -502,9 +511,65 @@ static void cycle_view(tree* t, i32 step) {
 }
 
 static void set_view(tree* t, view_id id) {
+  node* n;
+
   t->rows[t->cursor].view = id;
   row_key(t, t->cursor);
-  node_at(t, t->key.s)->view = id;
+  n = node_at(t, t->key.s);
+  n->view = id;
+  n->viewed = 1;
+}
+
+/* makes the cursor's view the rule for its pattern, dropping the views set
+ * on the paths the pattern matches. */
+static void spread_view(tree* t) {
+  view_id id = t->rows[t->cursor].view;
+  strbuf other = { 0 };
+
+  row_key(t, t->cursor);
+  pattern_of(t->key.s, &t->pattern);
+  for (usz i = 0; i < t->nodes_cap; i++) {
+    if (!t->nodes[i].viewed) continue;
+
+    pattern_of(t->nodes[i].key, &other);
+    if (strcmp(other.s, t->pattern.s) != 0) continue;
+
+    t->nodes[i].viewed = 0;
+    t->nodes[i].view = VIEW_DEFAULT;
+  }
+
+  free(other.s);
+  node_at(t, t->pattern.s)->view = id;
+  remember_cursor(t);
+  rebuild(t);
+}
+
+/* the view set on the path in t->key, else its rule's. */
+static view_id view_for(tree* t) {
+  node* n = node_find(t, t->key.s);
+
+  if (n->viewed) return n->view;
+
+  pattern_of(t->key.s, &t->pattern);
+  return node_find(t, t->pattern.s)->view;
+}
+
+/* key without its indices, #3."a"[0] -> #."a"[], so that keys differing
+ * only in indices share it. */
+static void pattern_of(const char* key, strbuf* b) {
+  b8 quoted = 0;
+
+  sb_cut(b, 0);
+  for (const char* s = key; *s; s++) {
+    if (quoted && *s == '\\') {
+      sb_add(b, s, 2);
+      s++;
+      continue;
+    }
+
+    if (*s == '"') quoted = !quoted;
+    if (quoted || *s < '0' || *s > '9') sb_add(b, s, 1);
+  }
 }
 
 static node* node_find(tree* t, const char* key) {

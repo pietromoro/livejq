@@ -51,6 +51,7 @@ static void test_path_quoting(void);
 static void test_view_cycling(void);
 static void test_view_kept_by_path(void);
 static void test_view_keys(void);
+static void test_view_siblings(void);
 
 static grid* screen;
 
@@ -691,6 +692,32 @@ static void test_view_keys(void) {
   app_free(a);
 }
 
+static void test_view_siblings(void) {
+  app* a = open_app("tests/data/sample.json", "[.users[] | {id}]");
+
+  if (!a) return;
+
+  press(a, '\t');
+  type(a, "jjxa");
+  ASSERT_STREQ(row(a, 2), "      id: 0x1  hex");
+  ASSERT_STREQ(row(a, 4), "      id: 0x2  hex");
+  type(a, "jj0");
+  ASSERT_STREQ(row(a, 2), "      id: 0x1  hex");
+  ASSERT_STREQ(row(a, 4), "      id: 2");
+
+  retype(a, "[.users[] | {id}] + [{id: 3, n: 4}]");
+  ASSERT_STREQ(row(a, 4), "      id: 2");
+  ASSERT_STREQ(row(a, 6), "      id: 0x3  hex");
+  ASSERT_STREQ(row(a, 7), "      n: 4");
+
+  type(a, "jjbkkoa");
+  ASSERT_STREQ(row(a, 2), "      id: 0o1  oct");
+  ASSERT_STREQ(row(a, 4), "      id: 0o2  oct");
+  ASSERT_STREQ(row(a, 6), "      id: 0o3  oct");
+  ASSERT_STREQ(row(a, 7), "      n: 4");
+  app_free(a);
+}
+
 #define TESTS(f)                          \
   f(test_focus)                           \
   f(test_click_focuses)                   \
@@ -710,7 +737,8 @@ static void test_view_keys(void) {
   f(test_path_quoting)                    \
   f(test_view_cycling)                    \
   f(test_view_kept_by_path)               \
-  f(test_view_keys)
+  f(test_view_keys)                       \
+  f(test_view_siblings)
 
 #define TEST_HELPER_MAIN
 

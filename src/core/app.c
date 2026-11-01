@@ -253,6 +253,9 @@ static void tree_key(app* a, u32 key) {
     case '0':
       tree_do(a->tree, TREE_VIEW_RESET);
       break;
+    case 'a':
+      tree_do(a->tree, TREE_VIEW_SIBLINGS);
+      break;
     case 'x':
       tree_view(a->tree, VIEW_HEX);
       break;

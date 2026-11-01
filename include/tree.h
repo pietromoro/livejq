@@ -22,7 +22,8 @@ typedef enum {
   TREE_UNFOLD_ALL,
   TREE_VIEW_NEXT,
   TREE_VIEW_PREV,
-  TREE_VIEW_RESET, /* back to the value as jq prints it */
+  TREE_VIEW_RESET,    /* back to the value as jq prints it */
+  TREE_VIEW_SIBLINGS, /* the cursor's view on every path differing only in indices */
 } tree_op;
 
 typedef struct tree tree;
