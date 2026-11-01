@@ -44,7 +44,7 @@ static void test_file_only(void) {
   CHECK(strcmp(o.app.path, "data.json") == 0);
   CHECK(o.app.query == NULL);
   CHECK(!o.app.slurp && !o.app.raw);
-  ASSERT_EQ(o.watch_ms, 0);
+  ASSERT_EQ(o.app.watch_ms, 0);
   CHECK(o.query_folder == NULL);
   ASSERT_EQ(jv_object_length(jv_copy(o.app.args)), 0);
   jv_free(o.app.args);
@@ -112,20 +112,20 @@ static void test_watch(void) {
   cli_opts o;
 
   ASSERT_EQ(parse(&o, "--watch", "a.json", NULL), CLI_RUN);
-  ASSERT_EQ(o.watch_ms, 1000);
+  ASSERT_EQ(o.app.watch_ms, 1000);
   CHECK(strcmp(o.app.path, "a.json") == 0);
   jv_free(o.app.args);
 
   ASSERT_EQ(parse(&o, "--watch", "2.5", "a.json", NULL), CLI_RUN);
-  ASSERT_EQ(o.watch_ms, 2500);
+  ASSERT_EQ(o.app.watch_ms, 2500);
   jv_free(o.app.args);
 
   ASSERT_EQ(parse(&o, "--watch", ".1", "a.json", NULL), CLI_RUN);
-  ASSERT_EQ(o.watch_ms, 100);
+  ASSERT_EQ(o.app.watch_ms, 100);
   jv_free(o.app.args);
 
   ASSERT_EQ(parse(&o, "a.json", "--watch", NULL), CLI_RUN);
-  ASSERT_EQ(o.watch_ms, 1000);
+  ASSERT_EQ(o.app.watch_ms, 1000);
   jv_free(o.app.args);
 }
 
@@ -162,7 +162,7 @@ static void test_end_of_options(void) {
   cli_opts o;
 
   ASSERT_EQ(parse(&o, "--watch", "--", "-odd.json", NULL), CLI_RUN);
-  ASSERT_EQ(o.watch_ms, 1000);
+  ASSERT_EQ(o.app.watch_ms, 1000);
   CHECK(strcmp(o.app.path, "-odd.json") == 0);
   jv_free(o.app.args);
 }
@@ -179,7 +179,7 @@ static void test_short_forms(void) {
   CHECK(o.app.slurp && o.app.raw);
   CHECK(strcmp(o.app.query, ".a") == 0);
   CHECK(strcmp(o.query_folder, "q") == 0);
-  ASSERT_EQ(o.watch_ms, 500);
+  ASSERT_EQ(o.app.watch_ms, 500);
   CHECK(strcmp(o.app.path, "a.json") == 0);
   jv_free(o.app.args);
 

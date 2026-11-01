@@ -45,6 +45,7 @@ static app* open_app(const char* path, const char* query, b8 raw, b8 slurp, jv a
   char err[256];
   app* a;
 
+  memset(&o, 0, sizeof(o));
   o.path = path;
   o.query = query;
   o.raw = raw;

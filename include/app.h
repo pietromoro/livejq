@@ -60,8 +60,9 @@ typedef struct {
   const char* query; /* default "." */
   b8 raw;
   b8 slurp;
-  jv args; /* object of $name bindings, owned by the app */
-  usz cap; /* default 10000 */
+  jv args;      /* object of $name bindings, owned by the app */
+  usz cap;      /* default 10000 */
+  i64 watch_ms; /* 0 when not watching */
 } app_opts;
 
 typedef struct app app;

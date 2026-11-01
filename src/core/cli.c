@@ -127,7 +127,7 @@ static b8 watch(i32 argc, char** argv, i32* i, cli_opts* opts, char* err, usz er
   char* end;
   f64 secs;
 
-  opts->watch_ms = DEFAULT_WATCH_MS;
+  opts->app.watch_ms = DEFAULT_WATCH_MS;
   if (*i + 1 >= argc) return 1;
 
   s = argv[*i + 1];
@@ -140,7 +140,7 @@ static b8 watch(i32 argc, char** argv, i32* i, cli_opts* opts, char* err, usz er
     return 0;
   }
 
-  opts->watch_ms = (i64)(secs * 1000 + 0.5);
+  opts->app.watch_ms = (i64)(secs * 1000 + 0.5);
   return 1;
 }
 

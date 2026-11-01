@@ -14,7 +14,6 @@ typedef enum {
 
 typedef struct {
   app_opts app;
-  i64 watch_ms;             /* 0 when not watching */
   const char* query_folder; /* NULL without a sidebar */
 } cli_opts;
 

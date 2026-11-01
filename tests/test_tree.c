@@ -25,7 +25,9 @@
 #define CLOSED    "\xe2\x96\xb8 "
 
 static app* open_app(const char* path, const char* query);
+static app* open_watched(const char* path, const char* query, i64 watch_ms);
 static void press(app* a, u32 key);
+static b8 tick(app* a, i64 now);
 static b8 mouse(app* a, app_mouse m, i32 x, i32 y);
 static void type(app* a, const char* s);
 static void retype(app* a, const char* s);
@@ -49,6 +51,7 @@ static void test_query_edit_keeps_state(void);
 static void test_cursor_falls_back_to_ancestor(void);
 static void test_reload_keeps_state(void);
 static void test_reload_keeps_views(void);
+static void test_watch_reloads(void);
 static void test_default_expansion(void);
 static void test_single_root_unlabeled(void);
 static void test_truncation(void);
@@ -64,7 +67,9 @@ static void test_time_unit(void);
 
 static grid* screen;
 
-static app* open_app(const char* path, const char* query) {
+static app* open_app(const char* path, const char* query) { return open_watched(path, query, 0); }
+
+static app* open_watched(const char* path, const char* query, i64 watch_ms) {
   app_opts o;
   char err[256];
   app* a;
@@ -73,6 +78,7 @@ static app* open_app(const char* path, const char* query) {
   o.path = path;
   o.query = query;
   o.args = jv_invalid();
+  o.watch_ms = watch_ms;
   a = app_new(&o, err, sizeof(err));
   if (!a) FAIL("app_new(%s): %s", path, err);
   else CHECK(app_settle(a, SETTLE_MS));
@@ -87,6 +93,15 @@ static void press(app* a, u32 key) {
   ev.key = key;
   ev.wall_ms = WALL_MS;
   app_feed(a, ev);
+}
+
+static b8 tick(app* a, i64 now) {
+  app_event ev = { 0 };
+
+  ev.kind = EV_TICK;
+  ev.now_ms = now;
+  ev.wall_ms = WALL_MS;
+  return app_feed(a, ev);
 }
 
 static b8 mouse(app* a, app_mouse m, i32 x, i32 y) {
@@ -582,6 +597,34 @@ static void test_reload_keeps_views(void) {
   app_free(a);
 }
 
+static void test_watch_reloads(void) {
+  const char* dir = getenv("TMPDIR");
+  char path[512];
+  app* a;
+
+  snprintf(path, sizeof(path), "%s/livejq-watch-%" PRId64 ".json", dir ? dir : "/tmp", clock_us());
+  write_file(path, "{\"n\":255}");
+  a = open_watched(path, ".", 1000);
+  if (!a) return;
+
+  press(a, '\t');
+  type(a, "jx");
+  CHECK(!tick(a, 0));
+  write_file(path, "{\"n\":4096,\"m\":1}");
+  CHECK(!tick(a, 999));
+  ASSERT_STREQ(row(a, 1), "    n: 0xff  hex");
+
+  tick(a, 1000);
+  CHECK(app_settle(a, SETTLE_MS));
+  ASSERT_STREQ(row(a, 1), "    n: 0x1000  hex");
+  ASSERT_STREQ(row(a, 2), "    m: 1");
+  ASSERT_STREQ(status(a), ".n");
+
+  CHECK(!tick(a, 2000));
+  remove(path);
+  app_free(a);
+}
+
 static void test_default_expansion(void) {
   app* a = open_app("tests/data/sample.json", "select(.ok) | {a: [range(2000)], b: [1]}");
 
@@ -935,6 +978,7 @@ static void test_time_unit(void) {
   f(test_cursor_falls_back_to_ancestor)   \
   f(test_reload_keeps_state)              \
   f(test_reload_keeps_views)              \
+  f(test_watch_reloads)                   \
   f(test_default_expansion)               \
   f(test_single_root_unlabeled)           \
   f(test_truncation)                      \
