@@ -535,7 +535,7 @@ static void cycle_unit(tree* t) {
   row* w = &t->rows[t->cursor];
   view_ctx ctx = t->ctx;
 
-  if (!view_takes_unit(w->view)) return;
+  if (!view_takes_unit(w->value, w->view)) return;
 
   for (i32 u = (i32)w->unit + 1; u < UNIT_COUNT; u++) {
     ctx.unit = (time_unit)u;
@@ -720,7 +720,7 @@ static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag
 
   ctx.unit = w->unit;
   text = w->view == VIEW_DEFAULT ? jv_invalid() : view_text(w->value, w->view, &ctx);
-  if (w->unit != UNIT_AUTO && view_takes_unit(w->view)) {
+  if (w->unit != UNIT_AUTO && view_takes_unit(w->value, w->view)) {
     snprintf(tag, sizeof(tag), "%s %s", view_name(w->view), unit_name(w->unit));
   } else {
     snprintf(tag, sizeof(tag), "%s", view_name(w->view));

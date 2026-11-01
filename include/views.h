@@ -15,7 +15,7 @@ typedef enum {
   VIEW_BYTES,    /* 1024-based units */
   VIEW_BYTES_SI, /* 1000-based units */
   VIEW_DURATION, /* the number as seconds */
-  VIEW_UTC,      /* integers as times, the unit guessed from their size */
+  VIEW_UTC,      /* integers as times, the unit guessed from their size, and dates */
   VIEW_LOCAL,
   VIEW_DATE,
   VIEW_AGO,
@@ -42,8 +42,9 @@ typedef struct {
 i32 views_of(jv v, view_id* out, i32 cap);
 /* The view's short name, as shown next to the value. */
 const char* view_name(view_id id);
-/* Whether view id reads integers as times, in a time_unit. */
-b8 view_takes_unit(view_id id);
+/* Whether view id reads v as a time in a time_unit, as it does integers.
+ * v is not consumed. */
+b8 view_takes_unit(jv v, view_id id);
 /* The unit's short name, "" for UNIT_AUTO. */
 const char* unit_name(time_unit unit);
 /* v as a string in view id, invalid when the view does not apply to it.

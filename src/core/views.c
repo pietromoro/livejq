@@ -35,9 +35,14 @@ static jv exponent(f64 d);
 static jv bytes(i64 n, f64 base, const char* const* units);
 static jv duration(f64 d);
 static jv short_duration(f64 d);
-static jv timestamp(i64 n, view_id id, time_unit unit);
-static jv relative(i64 n, i64 now_ms, time_unit unit);
+static b8 is_time(view_id id);
+static jv in_time(instant at, view_id id, const view_ctx* ctx);
+static jv timestamp(instant at, view_id id);
+static jv relative(instant at, i64 now_ms);
 static instant to_instant(i64 n, time_unit unit);
+static b8 parse_iso(const char* s, instant* at);
+static b8 parse_zone(const char* s, i64* off);
+static b8 digits(const char** s, i32 n, i64* out);
 static void split(i64 t, civil* c);
 static i64 days_of(i64 y, i32 m, i32 d);
 static b8 local_offset(i64 t, i64* off);
@@ -81,7 +86,7 @@ const char* view_name(view_id id) {
   }
 }
 
-b8 view_takes_unit(view_id id) { return id == VIEW_UTC || id == VIEW_LOCAL || id == VIEW_DATE || id == VIEW_AGO; }
+b8 view_takes_unit(jv v, view_id id) { return jv_get_kind(v) == JV_KIND_NUMBER && is_time(id); }
 
 const char* unit_name(time_unit unit) {
   switch (unit) {
@@ -95,7 +100,11 @@ const char* unit_name(time_unit unit) {
 
 jv view_text(jv v, view_id id, const view_ctx* ctx) {
   time_unit unit = ctx ? ctx->unit : UNIT_AUTO;
+  instant at;
   i64 n;
+
+  if (jv_get_kind(v) == JV_KIND_STRING && is_time(id))
+    return parse_iso(jv_string_value(v), &at) ? in_time(at, id, ctx) : jv_invalid();
 
   if (jv_get_kind(v) != JV_KIND_NUMBER) return jv_invalid();
 
@@ -109,8 +118,8 @@ jv view_text(jv v, view_id id, const view_ctx* ctx) {
     case VIEW_DURATION: return duration(jv_number_value(v));
     case VIEW_UTC:
     case VIEW_LOCAL:
-    case VIEW_DATE: return as_int(v, &n) ? timestamp(n, id, unit) : jv_invalid();
-    case VIEW_AGO: return as_int(v, &n) ? relative(n, ctx ? ctx->now_ms : 0, unit) : jv_invalid();
+    case VIEW_DATE:
+    case VIEW_AGO: return as_int(v, &n) ? in_time(to_instant(n, unit), id, ctx) : jv_invalid();
     default: return jv_invalid();
   }
 }
@@ -260,16 +269,24 @@ static jv short_duration(f64 d) {
   return jv_string(buf);
 }
 
-/* n since the epoch as an ISO-8601 time in UTC, in local time with its
- * offset, or as a date like 20 Jan 2026 15:53:20. */
-static jv timestamp(i64 n, view_id id, time_unit unit) {
-  instant at = to_instant(n, unit);
+static b8 is_time(view_id id) {
+  return id == VIEW_UTC || id == VIEW_LOCAL || id == VIEW_DATE || id == VIEW_AGO;
+}
+
+static jv in_time(instant at, view_id id, const view_ctx* ctx) {
+  return id == VIEW_AGO ? relative(at, ctx ? ctx->now_ms : 0) : timestamp(at, id);
+}
+
+/* at as an ISO-8601 time in UTC, in local time with its offset, or as a
+ * date like 20 Jan 2026 15:53:20. */
+static jv timestamp(instant at, view_id id) {
   i64 off = 0;
+
+  if (id != VIEW_UTC && !local_offset(at.sec, &off)) return jv_invalid();
+
   civil c;
   char frac[16] = "";
   char buf[64];
-
-  if (id != VIEW_UTC && !local_offset(at.sec, &off)) return jv_invalid();
 
   split(at.sec + off, &c);
   if (c.year < 0 || c.year > 9999) return jv_invalid();
@@ -311,10 +328,9 @@ static jv timestamp(i64 n, view_id id, time_unit unit) {
   return jv_string(buf);
 }
 
-/* n against now as its two largest parts, 2d 3h ago or in 5m 2s. */
-static jv relative(i64 n, i64 now_ms, time_unit unit) {
+/* at against now as its two largest parts, 2d 3h ago or in 5m 2s. */
+static jv relative(instant at, i64 now_ms) {
   static const i64 sizes[] = { DAY, 3600, 60, 1 };
-  instant at = to_instant(n, unit);
   i64 now = now_ms >= 0 ? now_ms / 1000 : (now_ms - 999) / 1000;
   i64 d = now - at.sec;
   u64 m = d < 0 ? (u64)0 - (u64)d : (u64)d;
@@ -357,6 +373,93 @@ static instant to_instant(i64 n, time_unit unit) {
   }
 
   return at;
+}
+
+/* an RFC 3339 time, or ISO 8601's 2024-10-30, 2024-10-30 14:53 and the
+ * like; UTC when it names no zone. */
+static b8 parse_iso(const char* s, instant* at) {
+  i64 y;
+  i64 mon;
+  i64 day;
+  i64 hour = 0;
+  i64 min = 0;
+  i64 sec = 0;
+  i64 off = 0;
+  civil c;
+
+  *at = (instant){ 0 };
+  if (!digits(&s, 4, &y) || *s++ != '-' || !digits(&s, 2, &mon) || *s++ != '-' || !digits(&s, 2, &day))
+    return 0;
+
+  if (*s == 'T' || *s == 't' || *s == ' ') {
+    s++;
+    if (!digits(&s, 2, &hour) || *s++ != ':' || !digits(&s, 2, &min)) return 0;
+
+    if (*s == ':') {
+      s++;
+      if (!digits(&s, 2, &sec)) return 0;
+    }
+
+    if (*s == '.' || *s == ',') {
+      i32 n = 0;
+
+      for (s++; *s >= '0' && *s <= '9'; s++, n++)
+        if (n < 9) at->frac = at->frac * 10 + (*s - '0');
+
+      if (n == 0) return 0;
+
+      at->digits = n <= 3 ? 3 : n <= 6 ? 6 : 9;
+      for (i32 i = n < 9 ? n : 9; i < at->digits; i++) at->frac *= 10;
+    }
+
+    if (!parse_zone(s, &off)) return 0;
+  } else if (*s) {
+    return 0;
+  }
+
+  if (mon < 1 || mon > 12 || day < 1 || hour > 23 || min > 59 || sec > 60) return 0;
+
+  at->sec = days_of(y, (i32)mon, (i32)day) * DAY;
+  split(at->sec, &c);
+  if (c.day != day) return 0;
+
+  at->sec += hour * 3600 + min * 60 + sec - off;
+  return 1;
+}
+
+/* Z, +01:00, -0330 or nothing, the whole of s, as seconds east of UTC. */
+static b8 parse_zone(const char* s, i64* off) {
+  i64 h;
+  i64 m;
+  i32 sign = *s == '-' ? -1 : 1;
+
+  *off = 0;
+  if (*s == '\0') return 1;
+
+  if ((*s == 'Z' || *s == 'z') && s[1] == '\0') return 1;
+
+  if (*s != '+' && *s != '-') return 0;
+
+  s++;
+  if (!digits(&s, 2, &h)) return 0;
+
+  if (*s == ':') s++;
+  if (!digits(&s, 2, &m) || *s || h > 23 || m > 59) return 0;
+
+  *off = sign * (h * 3600 + m * 60);
+  return 1;
+}
+
+/* exactly n decimal digits at *s, moving past them. */
+static b8 digits(const char** s, i32 n, i64* out) {
+  *out = 0;
+  for (i32 i = 0; i < n; i++, (*s)++) {
+    if (**s < '0' || **s > '9') return 0;
+
+    *out = *out * 10 + (**s - '0');
+  }
+
+  return 1;
 }
 
 /* t seconds since the epoch as a proleptic gregorian date and time. */

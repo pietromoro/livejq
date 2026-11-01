@@ -25,6 +25,7 @@ static void test_duration(void);
 static void test_time(void);
 static void test_relative(void);
 static void test_units(void);
+static void test_iso_strings(void);
 static void test_offered(void);
 static void test_names(void);
 
@@ -174,11 +175,35 @@ static void test_units(void) {
   ASSERT_STREQ(unit_name(UNIT_AUTO), "");
 }
 
+static void test_iso_strings(void) {
+  ASSERT_STREQ(shown("\"2024-10-30T14:53:20Z\"", VIEW_UTC), "2024-10-30T14:53:20Z");
+  ASSERT_STREQ(shown("\"2024-10-30t15:53:20+01:00\"", VIEW_UTC), "2024-10-30T14:53:20Z");
+  ASSERT_STREQ(shown("\"2024-10-30T11:23:20-0330\"", VIEW_UTC), "2024-10-30T14:53:20Z");
+  ASSERT_STREQ(shown("\"2024-10-30 14:53:20.5Z\"", VIEW_UTC), "2024-10-30T14:53:20.500Z");
+  ASSERT_STREQ(shown("\"2024-10-30T14:53:20,1234Z\"", VIEW_UTC), "2024-10-30T14:53:20.123400Z");
+  ASSERT_STREQ(shown("\"2024-10-30T14:53:20.1234567891Z\"", VIEW_UTC), "2024-10-30T14:53:20.123456789Z");
+  ASSERT_STREQ(shown("\"2024-10-30T14:53\"", VIEW_UTC), "2024-10-30T14:53:00Z");
+  ASSERT_STREQ(shown("\"2024-10-30\"", VIEW_UTC), "2024-10-30T00:00:00Z");
+  ASSERT_STREQ(shown("\"2024-02-29\"", VIEW_UTC), "2024-02-29T00:00:00Z");
+  ASSERT_STREQ(shown("\"2024-10-30T14:51:50Z\"", VIEW_AGO), "1m 30s ago");
+  ASSERT_STREQ(shown("\"2023-02-29\"", VIEW_UTC), "-");
+  ASSERT_STREQ(shown("\"2024-13-01\"", VIEW_UTC), "-");
+  ASSERT_STREQ(shown("\"2024-10-30T24:00Z\"", VIEW_UTC), "-");
+  ASSERT_STREQ(shown("\"2024-10-30T14:53:20.Z\"", VIEW_UTC), "-");
+  ASSERT_STREQ(shown("\"2024-10-30T14:53:20+1\"", VIEW_UTC), "-");
+  ASSERT_STREQ(shown("\"2024-10-30 \"", VIEW_UTC), "-");
+  ASSERT_STREQ(shown("\"2024-10-30x\"", VIEW_UTC), "-");
+  ASSERT_STREQ(shown("\"24-10-30\"", VIEW_UTC), "-");
+  ASSERT_STREQ(shown("\"2024-10-30\"", VIEW_HEX), "-");
+  ASSERT_STREQ(shown_in("\"2024-10-30\"", VIEW_UTC, UNIT_MS), "2024-10-30T00:00:00Z");
+}
+
 static void test_offered(void) {
   ASSERT_STREQ(offered("42"), "default hex oct bin exp iec si dur utc local date ago");
   ASSERT_STREQ(offered("1.5"), "default exp dur");
   ASSERT_STREQ(offered("0"), "default hex oct bin iec si dur utc local date ago");
   ASSERT_STREQ(offered("\"hello\""), "default");
+  ASSERT_STREQ(offered("\"2024-10-30\""), "default utc local date ago");
   ASSERT_STREQ(offered("null"), "default");
   ASSERT_STREQ(offered("[1]"), "default");
 }
@@ -197,6 +222,7 @@ static void test_names(void) {
   f(test_time)                 \
   f(test_relative)             \
   f(test_units)                \
+  f(test_iso_strings)          \
   f(test_offered)              \
   f(test_names)
 

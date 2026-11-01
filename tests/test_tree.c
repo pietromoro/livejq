@@ -763,6 +763,10 @@ static void test_time_unit(void) {
   type(a, "jtu");
   ASSERT_STREQ(row(a, 2), "    b: 2024-10-30T14:54:50.000Z  utc ms");
 
+  retype(a, "{a: \"2024-10-30T14:53:20Z\"}");
+  type(a, "tu");
+  ASSERT_STREQ(row(a, 1), "    a: 2024-10-30T14:53:20Z  utc");
+
   retype(a, "[1730300000, 1730300090]");
   type(a, "jtua");
   ASSERT_STREQ(row(a, 1), "    0: 2024-10-30T14:53:20Z  utc s");
