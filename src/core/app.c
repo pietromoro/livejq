@@ -1,4 +1,5 @@
 /* app - application state driven by events, rendered into a grid. */
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +31,7 @@ struct app {
   i64 watch_ms;
   i64 poll_at;     /* next look at the file, 0 before the first tick */
   file_stamp stamp;
+  b8 missing;      /* the watched file is gone, the last data stays */
   eval* ev;
   tree* tree;
   app_focus focus;
@@ -166,7 +168,7 @@ void app_render(app* a, grid* g) {
     TREE_Y,
     g->w - 1,
     g->h - TREE_Y - 2,
-    a->stale,
+    a->stale || a->missing,
     a->focus == FOCUS_TREE
   );
 
@@ -342,7 +344,7 @@ static b8 mouse(app* a, app_event ev) {
   ) || a->focus != was;
 }
 
-/* true when the file changed and was read again. */
+/* true when the file changed, went missing or came back. */
 static b8 poll(app* a, i64 now) {
   b8 first = a->poll_at == 0;
   file_stamp st;
@@ -350,9 +352,20 @@ static b8 poll(app* a, i64 now) {
   if (!first && now < a->poll_at) return 0;
 
   a->poll_at = now + a->watch_ms;
-  if (first || !file_stat(a->path, &st)) return 0;
-  if (st.mtime_ns == a->stamp.mtime_ns && st.size == a->stamp.size) return 0;
+  if (first) return 0;
 
+  if (!file_stat(a->path, &st)) {
+    if (a->missing) return 0;
+
+    a->missing = 1;
+    jv_free(a->load_error);
+    a->load_error = jv_string_fmt("%s: %s", a->path, strerror(errno));
+    return 1;
+  }
+
+  if (!a->missing && st.mtime_ns == a->stamp.mtime_ns && st.size == a->stamp.size) return 0;
+
+  a->missing = 0;
   reload(a);
   return 1;
 }
@@ -517,7 +530,9 @@ static void render_status(app* a, grid* g) {
     time[0] = '\0';
   }
 
-  x = segment(g, 0, failed(a) ? " ERROR " : " LIVEJQ ", failed(a) ? STYLE_PILL_ERROR : STYLE_PILL);
+  const char* pill = a->missing ? " MISSING " : failed(a) ? " ERROR " : " LIVEJQ ";
+
+  x = segment(g, 0, pill, failed(a) ? STYLE_PILL_ERROR : STYLE_PILL);
   right = g->w - utf8_columns(outputs, strlen(outputs)) - utf8_columns(time, strlen(time));
   if (right < x) right = x;
 

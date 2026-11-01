@@ -53,6 +53,7 @@ static void test_reload_keeps_state(void);
 static void test_reload_keeps_views(void);
 static void test_watch_reloads(void);
 static void test_watch_keeps_last_good(void);
+static void test_watch_missing_file(void);
 static void test_default_expansion(void);
 static void test_single_root_unlabeled(void);
 static void test_truncation(void);
@@ -664,6 +665,42 @@ static void test_watch_keeps_last_good(void) {
   app_free(a);
 }
 
+static void test_watch_missing_file(void) {
+  const char* dir = getenv("TMPDIR");
+  char path[512];
+
+  snprintf(
+    path,
+    sizeof(path),
+    "%s/livejq-missing-%" PRId64 ".json",
+    dir ? dir : "/tmp",
+    clock_us()
+  );
+  write_file(path, "{\"a\":true}");
+
+  app* a = open_watched(path, ".", 1000);
+
+  if (!a) return;
+
+  tick(a, 0);
+  remove(path);
+  CHECK(tick(a, 1000));
+  ASSERT_STREQ(row(a, 1), "    a: true");
+  ASSERT_EQ(grid_at(screen, LEFT + 7, TOP + 1).style, STYLE_DIM);
+  CHECK(strstr(line(a, H - 2), " MISSING ") == line(a, H - 2));
+  ASSERT_EQ(grid_at(screen, 1, H - 2).style, STYLE_PILL_ERROR);
+  CHECK(!tick(a, 2000));
+
+  write_file(path, "{\"a\":false}");
+  CHECK(tick(a, 3000));
+  CHECK(app_settle(a, SETTLE_MS));
+  ASSERT_STREQ(row(a, 1), "    a: false");
+  ASSERT_EQ(grid_at(screen, LEFT + 7, TOP + 1).style, STYLE_FALSE);
+  CHECK(strstr(line(a, H - 2), " LIVEJQ ") == line(a, H - 2));
+  remove(path);
+  app_free(a);
+}
+
 static void test_default_expansion(void) {
   app* a = open_app("tests/data/sample.json", "select(.ok) | {a: [range(2000)], b: [1]}");
 
@@ -1027,6 +1064,7 @@ static void test_time_unit(void) {
    f(test_reload_keeps_views)             \
    f(test_watch_reloads)                  \
    f(test_watch_keeps_last_good)          \
+   f(test_watch_missing_file)             \
    f(test_default_expansion)              \
    f(test_single_root_unlabeled)          \
    f(test_truncation)                     \
