@@ -26,6 +26,7 @@ static void test_time(void);
 static void test_relative(void);
 static void test_units(void);
 static void test_iso_strings(void);
+static void test_rfc2822_strings(void);
 static void test_offered(void);
 static void test_names(void);
 
@@ -198,6 +199,22 @@ static void test_iso_strings(void) {
   ASSERT_STREQ(shown_in("\"2024-10-30\"", VIEW_UTC, UNIT_MS), "2024-10-30T00:00:00Z");
 }
 
+static void test_rfc2822_strings(void) {
+  ASSERT_STREQ(shown("\"Wed, 30 Oct 2024 14:53:20 GMT\"", VIEW_UTC), "2024-10-30T14:53:20Z");
+  ASSERT_STREQ(shown("\"30 Oct 2024 15:53:20 +0100\"", VIEW_UTC), "2024-10-30T14:53:20Z");
+  ASSERT_STREQ(shown("\"Wed,  30 Oct 2024 10:53 EDT\"", VIEW_UTC), "2024-10-30T14:53:00Z");
+  ASSERT_STREQ(shown("\"Sat, 2 Nov 2024 06:00:00 PST\"", VIEW_UTC), "2024-11-02T14:00:00Z");
+  ASSERT_STREQ(shown("\"30 Oct 2024 14:53:20\"", VIEW_UTC), "2024-10-30T14:53:20Z");
+  ASSERT_STREQ(shown("\"Wed, 30 Oct 2024 14:51:50 UT\"", VIEW_AGO), "1m 30s ago");
+  ASSERT_STREQ(shown("\"Wed, 31 Feb 2024 14:53:20 GMT\"", VIEW_UTC), "-");
+  ASSERT_STREQ(shown("\"Wed, 30 oct 2024 14:53:20 GMT\"", VIEW_UTC), "-");
+  ASSERT_STREQ(shown("\"Wed 30 Oct 2024 14:53:20 GMT\"", VIEW_UTC), "-");
+  ASSERT_STREQ(shown("\"30 Oct 24 14:53:20 GMT\"", VIEW_UTC), "-");
+  ASSERT_STREQ(shown("\"30 Oct 2024 14:53:20 CET\"", VIEW_UTC), "-");
+  ASSERT_STREQ(shown("\"30 Oct 2024 14:53:20 \"", VIEW_UTC), "-");
+  ASSERT_STREQ(shown("\"30 Oct 2024\"", VIEW_UTC), "-");
+}
+
 static void test_offered(void) {
   ASSERT_STREQ(offered("42"), "default hex oct bin exp iec si dur utc local date ago");
   ASSERT_STREQ(offered("1.5"), "default exp dur");
@@ -223,6 +240,7 @@ static void test_names(void) {
   f(test_relative)             \
   f(test_units)                \
   f(test_iso_strings)          \
+  f(test_rfc2822_strings)      \
   f(test_offered)              \
   f(test_names)
 

@@ -41,8 +41,14 @@ static jv timestamp(instant at, view_id id);
 static jv relative(instant at, i64 now_ms);
 static instant to_instant(i64 n, time_unit unit);
 static b8 parse_iso(const char* s, instant* at);
+static b8 parse_rfc2822(const char* s, instant* at);
+static b8 clock_time(const char** s, civil* c);
 static b8 parse_zone(const char* s, i64* off);
-static b8 digits(const char** s, i32 n, i64* out);
+static b8 named_zone(const char* s, i64* off);
+static b8 from_civil(const civil* c, i64 off, instant* at);
+static b8 digits(const char** s, i32 n, i32* out);
+static i32 name_in(const char* names, const char* s);
+static const char* skip_spaces(const char* s);
 static void split(i64 t, civil* c);
 static i64 days_of(i64 y, i32 m, i32 d);
 static b8 local_offset(i64 t, i64* off);
@@ -54,6 +60,24 @@ static const char* const iec_units[] = { "B", "KiB", "MiB", "GiB", "TiB", "PiB",
 static const char* const si_units[] = { "B", "kB", "MB", "GB", "TB", "PB", "EB", NULL };
 static const char* const second_units[] = { "ms", "\xc2\xb5s", "ns" };
 static const char months[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
+static const char weekdays[] = "MonTueWedThuFriSatSun";
+
+static const struct {
+  const char* name;
+  i32 hours; /* east of UTC */
+} zones[] = {
+    { "GMT", 0 },
+    { "UT", 0 },
+    { "UTC", 0 },
+    { "EST", -5 },
+    { "EDT", -4 },
+    { "CST", -6 },
+    { "CDT", -5 },
+    { "MST", -7 },
+    { "MDT", -6 },
+    { "PST", -8 },
+    { "PDT", -7 },
+};
 
 i32 views_of(jv v, view_id* out, i32 cap) {
   i32 n = 0;
@@ -103,8 +127,11 @@ jv view_text(jv v, view_id id, const view_ctx* ctx) {
   instant at;
   i64 n;
 
-  if (jv_get_kind(v) == JV_KIND_STRING && is_time(id))
-    return parse_iso(jv_string_value(v), &at) ? in_time(at, id, ctx) : jv_invalid();
+  if (jv_get_kind(v) == JV_KIND_STRING && is_time(id)) {
+    const char* s = jv_string_value(v);
+
+    return parse_iso(s, &at) || parse_rfc2822(s, &at) ? in_time(at, id, ctx) : jv_invalid();
+  }
 
   if (jv_get_kind(v) != JV_KIND_NUMBER) return jv_invalid();
 
@@ -378,59 +405,78 @@ static instant to_instant(i64 n, time_unit unit) {
 /* an RFC 3339 time, or ISO 8601's 2024-10-30, 2024-10-30 14:53 and the
  * like; UTC when it names no zone. */
 static b8 parse_iso(const char* s, instant* at) {
-  i64 y;
-  i64 mon;
-  i64 day;
-  i64 hour = 0;
-  i64 min = 0;
-  i64 sec = 0;
+  civil c = { 0 };
+  i32 y;
   i64 off = 0;
-  civil c;
 
   *at = (instant){ 0 };
-  if (!digits(&s, 4, &y) || *s++ != '-' || !digits(&s, 2, &mon) || *s++ != '-' || !digits(&s, 2, &day))
+  if (!digits(&s, 4, &y) || *s++ != '-' || !digits(&s, 2, &c.mon) || *s++ != '-' || !digits(&s, 2, &c.day))
     return 0;
 
-  if (*s == 'T' || *s == 't' || *s == ' ') {
-    s++;
-    if (!digits(&s, 2, &hour) || *s++ != ':' || !digits(&s, 2, &min)) return 0;
+  c.year = y;
+  if (*s == '\0') return from_civil(&c, 0, at);
 
-    if (*s == ':') {
-      s++;
-      if (!digits(&s, 2, &sec)) return 0;
-    }
+  if (*s != 'T' && *s != 't' && *s != ' ') return 0;
 
-    if (*s == '.' || *s == ',') {
-      i32 n = 0;
+  s++;
+  if (!clock_time(&s, &c)) return 0;
 
-      for (s++; *s >= '0' && *s <= '9'; s++, n++)
-        if (n < 9) at->frac = at->frac * 10 + (*s - '0');
+  if (*s == '.' || *s == ',') {
+    i32 n = 0;
 
-      if (n == 0) return 0;
+    for (s++; *s >= '0' && *s <= '9'; s++, n++)
+      if (n < 9) at->frac = at->frac * 10 + (*s - '0');
 
-      at->digits = n <= 3 ? 3 : n <= 6 ? 6 : 9;
-      for (i32 i = n < 9 ? n : 9; i < at->digits; i++) at->frac *= 10;
-    }
+    if (n == 0) return 0;
 
-    if (!parse_zone(s, &off)) return 0;
-  } else if (*s) {
-    return 0;
+    at->digits = n <= 3 ? 3 : n <= 6 ? 6 : 9;
+    for (i32 i = n < 9 ? n : 9; i < at->digits; i++) at->frac *= 10;
   }
 
-  if (mon < 1 || mon > 12 || day < 1 || hour > 23 || min > 59 || sec > 60) return 0;
+  return parse_zone(s, &off) && from_civil(&c, off, at);
+}
 
-  at->sec = days_of(y, (i32)mon, (i32)day) * DAY;
-  split(at->sec, &c);
-  if (c.day != day) return 0;
+/* an RFC 2822 time, as mail and HTTP headers write it:
+ * Wed, 30 Oct 2024 14:53:20 GMT. UTC when it names no zone. */
+static b8 parse_rfc2822(const char* s, instant* at) {
+  civil c = { 0 };
+  i32 y;
+  i64 off = 0;
 
-  at->sec += hour * 3600 + min * 60 + sec - off;
-  return 1;
+  *at = (instant){ 0 };
+  if (name_in(weekdays, s) >= 0 && s[3] == ',') s = skip_spaces(s + 4);
+
+  if (!digits(&s, s[0] && s[1] >= '0' && s[1] <= '9' ? 2 : 1, &c.day) || *s++ != ' ') return 0;
+
+  c.mon = name_in(months, s) + 1;
+  if (c.mon == 0 || s[3] != ' ') return 0;
+
+  s += 4;
+  if (!digits(&s, 4, &y) || *s++ != ' ' || !clock_time(&s, &c)) return 0;
+
+  c.year = y;
+  if (*s == '\0') return from_civil(&c, 0, at);
+
+  if (*s != ' ') return 0;
+
+  s = skip_spaces(s);
+  return (named_zone(s, &off) || (*s && parse_zone(s, &off))) && from_civil(&c, off, at);
+}
+
+/* hh:mm or hh:mm:ss at *s into c, moving past it. */
+static b8 clock_time(const char** s, civil* c) {
+  if (!digits(s, 2, &c->hour) || *(*s)++ != ':' || !digits(s, 2, &c->min)) return 0;
+
+  if (**s != ':') return 1;
+
+  (*s)++;
+  return digits(s, 2, &c->sec);
 }
 
 /* Z, +01:00, -0330 or nothing, the whole of s, as seconds east of UTC. */
 static b8 parse_zone(const char* s, i64* off) {
-  i64 h;
-  i64 m;
+  i32 h;
+  i32 m;
   i32 sign = *s == '-' ? -1 : 1;
 
   *off = 0;
@@ -450,8 +496,35 @@ static b8 parse_zone(const char* s, i64* off) {
   return 1;
 }
 
+/* one of RFC 2822's zone names, the whole of s, as seconds east of UTC. */
+static b8 named_zone(const char* s, i64* off) {
+  for (usz i = 0; i < ARRAY_LEN(zones); i++) {
+    if (strcmp(s, zones[i].name) != 0) continue;
+
+    *off = zones[i].hours * 3600;
+    return 1;
+  }
+
+  return 0;
+}
+
+/* c, read in a zone off seconds east of UTC, as the seconds of at. False
+ * when c is no real date and time. */
+static b8 from_civil(const civil* c, i64 off, instant* at) {
+  if (c->mon < 1 || c->mon > 12 || c->day < 1 || c->hour > 23 || c->min > 59 || c->sec > 60) return 0;
+
+  civil back;
+
+  at->sec = days_of(c->year, c->mon, c->day) * DAY;
+  split(at->sec, &back);
+  if (back.day != c->day) return 0;
+
+  at->sec += c->hour * 3600 + c->min * 60 + c->sec - off;
+  return 1;
+}
+
 /* exactly n decimal digits at *s, moving past them. */
-static b8 digits(const char** s, i32 n, i64* out) {
+static b8 digits(const char** s, i32 n, i32* out) {
   *out = 0;
   for (i32 i = 0; i < n; i++, (*s)++) {
     if (**s < '0' || **s > '9') return 0;
@@ -460,6 +533,21 @@ static b8 digits(const char** s, i32 n, i64* out) {
   }
 
   return 1;
+}
+
+/* the index of the three letters at s in names, -1 when they are not
+ * there. */
+static i32 name_in(const char* names, const char* s) {
+  for (i32 i = 0; names[i * 3]; i++)
+    if (strncmp(names + i * 3, s, 3) == 0) return i;
+
+  return -1;
+}
+
+static const char* skip_spaces(const char* s) {
+  while (*s == ' ') s++;
+
+  return s;
 }
 
 /* t seconds since the epoch as a proleptic gregorian date and time. */
