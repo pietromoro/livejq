@@ -14,6 +14,7 @@ static void test_bases(void);
 static void test_negative_and_huge(void);
 static void test_exponent(void);
 static void test_bytes(void);
+static void test_duration(void);
 static void test_offered(void);
 static void test_names(void);
 
@@ -97,10 +98,26 @@ static void test_bytes(void) {
   ASSERT_STREQ(shown("1.5", VIEW_BYTES), "-");
 }
 
+static void test_duration(void) {
+  ASSERT_STREQ(shown("3723", VIEW_DURATION), "1h 2m 3s");
+  ASSERT_STREQ(shown("90061", VIEW_DURATION), "1d 1h 1m 1s");
+  ASSERT_STREQ(shown("3600", VIEW_DURATION), "1h");
+  ASSERT_STREQ(shown("86400.5", VIEW_DURATION), "1d 0.5s");
+  ASSERT_STREQ(shown("61.25", VIEW_DURATION), "1m 1.25s");
+  ASSERT_STREQ(shown("-90", VIEW_DURATION), "-1m 30s");
+  ASSERT_STREQ(shown("0.25", VIEW_DURATION), "250ms");
+  ASSERT_STREQ(shown("0.9996", VIEW_DURATION), "1s");
+  ASSERT_STREQ(shown("0.0000015", VIEW_DURATION), "1.5\xc2\xb5s");
+  ASSERT_STREQ(shown("0.0009996", VIEW_DURATION), "1ms");
+  ASSERT_STREQ(shown("-0.000000002", VIEW_DURATION), "-2ns");
+  ASSERT_STREQ(shown("0", VIEW_DURATION), "0s");
+  ASSERT_STREQ(shown("1e300", VIEW_DURATION), "-");
+}
+
 static void test_offered(void) {
-  ASSERT_STREQ(offered("42"), "default hex oct bin exp iec si");
-  ASSERT_STREQ(offered("1.5"), "default exp");
-  ASSERT_STREQ(offered("0"), "default hex oct bin iec si");
+  ASSERT_STREQ(offered("42"), "default hex oct bin exp iec si dur");
+  ASSERT_STREQ(offered("1.5"), "default exp dur");
+  ASSERT_STREQ(offered("0"), "default hex oct bin iec si dur");
   ASSERT_STREQ(offered("\"hello\""), "default");
   ASSERT_STREQ(offered("null"), "default");
   ASSERT_STREQ(offered("[1]"), "default");
@@ -116,6 +133,7 @@ static void test_names(void) {
   f(test_negative_and_huge)    \
   f(test_exponent)             \
   f(test_bytes)                \
+  f(test_duration)             \
   f(test_offered)              \
   f(test_names)
 
