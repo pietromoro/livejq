@@ -5,11 +5,29 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "views.h"
 
 #define MAX_EXACT   9007199254740992.0 /* 2^53 */
 #define MAX_SECONDS 1e15               /* its milliseconds still fit an i64 */
+#define DAY         86400
+
+/* a moment, from a number whose unit was guessed. */
+typedef struct {
+  i64 sec;    /* since the epoch, floored */
+  i64 frac;   /* below the second, in the unit */
+  i32 digits; /* the unit's: 0, 3, 6 or 9 */
+} instant;
+
+typedef struct {
+  i64 year;
+  i32 mon; /* 1..12 */
+  i32 day;
+  i32 hour;
+  i32 min;
+  i32 sec;
+} civil;
 
 static b8 as_int(jv v, i64* out);
 static jv in_base(i64 n, u32 base, const char* prefix);
@@ -17,12 +35,19 @@ static jv exponent(f64 d);
 static jv bytes(i64 n, f64 base, const char* const* units);
 static jv duration(f64 d);
 static jv short_duration(f64 d);
+static jv timestamp(i64 n, view_id id);
+static instant to_instant(i64 n);
+static void split(i64 t, civil* c);
+static i64 days_of(i64 y, i32 m, i32 d);
+static b8 local_offset(i64 t, i64* off);
+static b8 local_tm(time_t t, struct tm* out);
 static f64 round3(f64 v, i32* dec);
 static void put_trimmed(char* buf, usz cap, f64 v, i32 dec);
 
 static const char* const iec_units[] = { "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", NULL };
 static const char* const si_units[] = { "B", "kB", "MB", "GB", "TB", "PB", "EB", NULL };
 static const char* const second_units[] = { "ms", "\xc2\xb5s", "ns" };
+static const char months[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
 
 i32 views_of(jv v, view_id* out, i32 cap) {
   i32 n = 0;
@@ -47,6 +72,9 @@ const char* view_name(view_id id) {
     case VIEW_BYTES: return "iec";
     case VIEW_BYTES_SI: return "si";
     case VIEW_DURATION: return "dur";
+    case VIEW_UTC: return "utc";
+    case VIEW_LOCAL: return "local";
+    case VIEW_DATE: return "date";
     default: return "";
   }
 }
@@ -64,6 +92,9 @@ jv view_text(jv v, view_id id) {
     case VIEW_BYTES: return as_int(v, &n) ? bytes(n, 1024, iec_units) : jv_invalid();
     case VIEW_BYTES_SI: return as_int(v, &n) ? bytes(n, 1000, si_units) : jv_invalid();
     case VIEW_DURATION: return duration(jv_number_value(v));
+    case VIEW_UTC:
+    case VIEW_LOCAL:
+    case VIEW_DATE: return as_int(v, &n) ? timestamp(n, id) : jv_invalid();
     default: return jv_invalid();
   }
 }
@@ -212,6 +243,140 @@ static jv short_duration(f64 d) {
   snprintf(buf, sizeof(buf), "%s%s%s", d < 0 ? "-" : "", num, second_units[u]);
   return jv_string(buf);
 }
+
+/* n since the epoch as an ISO-8601 time in UTC, in local time with its
+ * offset, or as a date like 20 Jan 2026 15:53:20. */
+static jv timestamp(i64 n, view_id id) {
+  instant at = to_instant(n);
+  i64 off = 0;
+  civil c;
+  char frac[16] = "";
+  char buf[64];
+
+  if (id != VIEW_UTC && !local_offset(at.sec, &off)) return jv_invalid();
+
+  split(at.sec + off, &c);
+  if (c.year < 0 || c.year > 9999) return jv_invalid();
+
+  if (at.digits) snprintf(frac, sizeof(frac), ".%0*" PRId64, at.digits, at.frac);
+
+  if (id == VIEW_UTC) {
+    snprintf(
+      buf,
+      sizeof(buf),
+      "%04" PRId64 "-%02d-%02dT%02d:%02d:%02d%sZ",
+      c.year, c.mon, c.day, c.hour,
+      c.min, c.sec, frac
+    );
+  } else if (id == VIEW_LOCAL) {
+    i64 m = off < 0 ? -off / 60 : off / 60;
+
+    snprintf(
+      buf,
+      sizeof(buf),
+      "%04" PRId64 "-%02d-%02d %02d:%02d:%02d%s %c%02d:%02d",
+      c.year, c.mon, c.day, c.hour,
+      c.min, c.sec, frac,
+      off < 0 ? '-' : '+',
+      (i32)(m / 60),
+      (i32)(m % 60)
+    );
+  } else {
+    snprintf(
+      buf,
+      sizeof(buf),
+      "%d %.3s %" PRId64 " %02d:%02d:%02d",
+      c.day,
+      months + (c.mon - 1) * 3,
+      c.year, c.hour, c.min, c.sec
+    );
+  }
+
+  return jv_string(buf);
+}
+
+/* n with its unit guessed from its size: seconds below 1e11 (year 5138),
+ * then milliseconds, microseconds and nanoseconds. */
+static instant to_instant(i64 n) {
+  static const i64 per[] = { 1, 1000, 1000000, 1000000000 };
+  u64 m = n < 0 ? (u64)0 - (u64)n : (u64)n;
+  i32 u = m < 100000000000ull ? 0 : m < 100000000000000ull ? 1 : m < 100000000000000000ull ? 2 : 3;
+  instant at = { n / per[u], n % per[u], u * 3 };
+
+  if (at.frac < 0) {
+    at.frac += per[u];
+    at.sec--;
+  }
+
+  return at;
+}
+
+/* t seconds since the epoch as a proleptic gregorian date and time. */
+static void split(i64 t, civil* c) {
+  i64 days = t >= 0 ? t / DAY : (t - DAY + 1) / DAY;
+  i64 rem = t - days * DAY;
+  i64 z = days + 719468;
+  i64 era = (z >= 0 ? z : z - 146096) / 146097;
+  i64 doe = z - era * 146097;
+  i64 yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+  i64 doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+  i64 mp = (5 * doy + 2) / 153;
+
+  c->day = (i32)(doy - (153 * mp + 2) / 5 + 1);
+  c->mon = (i32)(mp < 10 ? mp + 3 : mp - 9);
+  c->year = yoe + era * 400 + (c->mon <= 2);
+  c->hour = (i32)(rem / 3600);
+  c->min = (i32)(rem / 60 % 60);
+  c->sec = (i32)(rem % 60);
+}
+
+/* days from 1970-01-01 to y-m-d, the inverse of split. */
+static i64 days_of(i64 y, i32 m, i32 d) {
+  y -= m <= 2;
+
+  i64 era = (y >= 0 ? y : y - 399) / 400;
+  i64 yoe = y - era * 400;
+  i64 doy = (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + d - 1;
+  i64 doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+
+  return era * 146097 + doe - 719468;
+}
+
+/* the local zone's offset from UTC at t, in seconds. */
+static b8 local_offset(i64 t, i64* off) {
+  struct tm tm;
+  i64 local;
+
+  if (!local_tm((time_t)t, &tm)) return 0;
+
+  local = days_of((i64)tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday) * DAY + tm.tm_hour * 3600
+    + tm.tm_min * 60 + tm.tm_sec;
+
+  *off = local - t;
+  return 1;
+}
+
+/* curufmt variant */
+#ifdef _WIN32
+
+/* the CRT keeps localtime's result per thread. */
+static b8 local_tm(time_t t, struct tm* out) {
+  struct tm* tm = localtime(&t);
+
+  if (!tm) return 0;
+
+  *out = *tm;
+  return 1;
+}
+
+#else
+
+static b8 local_tm(time_t t, struct tm* out) {
+  tzset();
+  return localtime_r(&t, out) != NULL;
+}
+
+#endif
 
 /* v rounded to three significant digits, dec of them after the point. */
 static f64 round3(f64 v, i32* dec) {

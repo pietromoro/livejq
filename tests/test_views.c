@@ -1,5 +1,9 @@
 /* views tests - each value in each view, straight from the library. */
+#define _POSIX_C_SOURCE 200809L
+
+#include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <jv.h>
 
@@ -15,6 +19,7 @@ static void test_negative_and_huge(void);
 static void test_exponent(void);
 static void test_bytes(void);
 static void test_duration(void);
+static void test_time(void);
 static void test_offered(void);
 static void test_names(void);
 
@@ -114,10 +119,30 @@ static void test_duration(void) {
   ASSERT_STREQ(shown("1e300", VIEW_DURATION), "-");
 }
 
+static void test_time(void) {
+  setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1);
+  tzset();
+  ASSERT_STREQ(shown("1730300000", VIEW_UTC), "2024-10-30T14:53:20Z");
+  ASSERT_STREQ(shown("1730300000", VIEW_LOCAL), "2024-10-30 15:53:20 +01:00");
+  ASSERT_STREQ(shown("1720000000", VIEW_LOCAL), "2024-07-03 11:46:40 +02:00");
+  ASSERT_STREQ(shown("1768924800", VIEW_DATE), "20 Jan 2026 17:00:00");
+  ASSERT_STREQ(shown("1730300000123", VIEW_UTC), "2024-10-30T14:53:20.123Z");
+  ASSERT_STREQ(shown("1730300000000123", VIEW_UTC), "2024-10-30T14:53:20.000123Z");
+  ASSERT_STREQ(shown("1730300000000000001", VIEW_UTC), "2024-10-30T14:53:20.000000001Z");
+  ASSERT_STREQ(shown("0", VIEW_UTC), "1970-01-01T00:00:00Z");
+  ASSERT_STREQ(shown("-1", VIEW_UTC), "1969-12-31T23:59:59Z");
+  ASSERT_STREQ(shown("951782400", VIEW_UTC), "2000-02-29T00:00:00Z");
+  ASSERT_STREQ(shown("-99999999999", VIEW_UTC), "-");
+  ASSERT_STREQ(shown("1.5", VIEW_UTC), "-");
+  setenv("TZ", "<-0330>3:30", 1);
+  tzset();
+  ASSERT_STREQ(shown("0", VIEW_LOCAL), "1969-12-31 20:30:00 -03:30");
+}
+
 static void test_offered(void) {
-  ASSERT_STREQ(offered("42"), "default hex oct bin exp iec si dur");
+  ASSERT_STREQ(offered("42"), "default hex oct bin exp iec si dur utc local date");
   ASSERT_STREQ(offered("1.5"), "default exp dur");
-  ASSERT_STREQ(offered("0"), "default hex oct bin iec si dur");
+  ASSERT_STREQ(offered("0"), "default hex oct bin iec si dur utc local date");
   ASSERT_STREQ(offered("\"hello\""), "default");
   ASSERT_STREQ(offered("null"), "default");
   ASSERT_STREQ(offered("[1]"), "default");
@@ -134,6 +159,7 @@ static void test_names(void) {
   f(test_exponent)             \
   f(test_bytes)                \
   f(test_duration)             \
+  f(test_time)                 \
   f(test_offered)              \
   f(test_names)
 

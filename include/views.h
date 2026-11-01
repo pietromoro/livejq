@@ -1,4 +1,4 @@
-/* livejq - other ways to show a value: bases, notations, sizes, durations. */
+/* livejq - other ways to show a value: bases, notations, sizes, times. */
 #ifndef LIVEJQ_VIEWS_H
 #define LIVEJQ_VIEWS_H
 
@@ -15,6 +15,9 @@ typedef enum {
   VIEW_BYTES,    /* 1024-based units */
   VIEW_BYTES_SI, /* 1000-based units */
   VIEW_DURATION, /* the number as seconds */
+  VIEW_UTC,      /* integers as times, the unit guessed from their size */
+  VIEW_LOCAL,
+  VIEW_DATE,
   VIEW_COUNT,
 } view_id;
 

@@ -627,8 +627,8 @@ static void test_view_cycling(void) {
   press(a, 'V');
   press(a, 'V');
   ASSERT_STREQ(row(a, 3), "    ts: 1730300000");
-  press(a, 'V');
-  ASSERT_STREQ(row(a, 3), "    ts: 20026d 14h 53m 20s  dur");
+  type(a, "VVV");
+  ASSERT_STREQ(row(a, 3), "    ts: 2024-10-30T14:53:20Z  utc");
   press(a, '0');
   ASSERT_STREQ(row(a, 3), "    ts: 1730300000");
 
