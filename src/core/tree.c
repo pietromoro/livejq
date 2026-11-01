@@ -40,6 +40,7 @@ typedef struct {
 
 typedef struct {
   jv value;
+  jv derived; /* the tree the view makes of value, invalid when none */
   jv key;     /* member name, element index, or root index */
   i32 parent; /* -1 for a root */
   i32 depth;
@@ -77,7 +78,8 @@ struct tree {
 static void rebuild(tree* t);
 static void add_rows(tree* t, jv value, jv key, i32 parent, i32 depth);
 static void match_cursor(tree* t, i32 r);
-static b8 is_open(tree* t, jv value, i32 depth);
+static b8 is_open(tree* t, const row* w);
+static jv members(const row* w);
 static b8 has_children(jv v);
 static i32 count_rows(jv v, i32 levels, i32 budget);
 static expand_mode pick_mode(tree* t);
@@ -120,6 +122,7 @@ void tree_free(tree* t) {
 
   for (i32 i = 0; i < t->nrows; i++) {
     jv_free(t->rows[i].value);
+    jv_free(t->rows[i].derived);
     jv_free(t->rows[i].key);
   }
 
@@ -173,15 +176,15 @@ void tree_do(tree* t, tree_op op) {
       fold_or_leave(t);
       break;
     case TREE_UNFOLD:
-      if (has_children(t->rows[t->cursor].value)) fold_row(t, 1);
+      if (has_children(members(&t->rows[t->cursor]))) fold_row(t, 1);
       break;
     case TREE_TOGGLE:
-      if (has_children(t->rows[t->cursor].value)) fold_row(t, !t->rows[t->cursor].open);
+      if (has_children(members(&t->rows[t->cursor]))) fold_row(t, !t->rows[t->cursor].open);
       break;
     case TREE_FOLD_ALL:
     case TREE_UNFOLD_ALL:
       row_key(t, t->cursor);
-      set_subtree(t, t->rows[t->cursor].value, op == TREE_UNFOLD_ALL);
+      set_subtree(t, members(&t->rows[t->cursor]), op == TREE_UNFOLD_ALL);
       remember_cursor(t);
       rebuild(t);
       break;
@@ -220,14 +223,10 @@ void tree_view(tree* t, const view_id* ids, i32 n) {
     if (ids[i] == t->rows[t->cursor].view) at = i;
 
   for (i32 i = at + 1; i < n; i++) {
-    jv text = view_text(t->rows[t->cursor].value, ids[i], NULL);
-    b8 applies = jv_is_valid(text);
+    if (!view_applies(t->rows[t->cursor].value, ids[i])) continue;
 
-    jv_free(text);
-    if (applies) {
-      set_view(t, ids[i], t->rows[t->cursor].unit);
-      return;
-    }
+    set_view(t, ids[i], t->rows[t->cursor].unit);
+    return;
   }
 
   if (at >= 0) set_view(t, VIEW_DEFAULT, t->rows[t->cursor].unit);
@@ -306,6 +305,7 @@ static void rebuild(tree* t) {
 
   for (i32 i = 0; i < t->nrows; i++) {
     jv_free(t->rows[i].value);
+    jv_free(t->rows[i].derived);
     jv_free(t->rows[i].key);
   }
 
@@ -337,19 +337,22 @@ static void add_rows(tree* t, jv value, jv key, i32 parent, i32 depth) {
   }
 
   t->rows[r].value = value;
+  t->rows[r].derived = view_tree(value, shown->view);
   t->rows[r].key = key;
   t->rows[r].parent = parent;
   t->rows[r].depth = depth;
-  t->rows[r].open = is_open(t, value, depth);
   t->rows[r].view = shown->view;
   t->rows[r].unit = shown->unit;
+  t->rows[r].open = is_open(t, &t->rows[r]);
   t->nrows++;
   match_cursor(t, r);
 
-  if (t->rows[r].open && jv_get_kind(value) == JV_KIND_ARRAY) {
-    jv_array_foreach(value, i, item) add_rows(t, item, jv_number(i), r, depth + 1);
+  jv items = members(&t->rows[r]);
+
+  if (t->rows[r].open && jv_get_kind(items) == JV_KIND_ARRAY) {
+    jv_array_foreach(items, i, item) add_rows(t, item, jv_number(i), r, depth + 1);
   } else if (t->rows[r].open) {
-    jv_object_foreach(value, k, item) add_rows(t, item, k, r, depth + 1);
+    jv_object_foreach(items, k, item) add_rows(t, item, k, r, depth + 1);
   }
 
   sb_cut(&t->key, mark);
@@ -367,14 +370,24 @@ static void match_cursor(tree* t, i32 r) {
   t->best_len = len + 1;
 }
 
-static b8 is_open(tree* t, jv value, i32 depth) {
-  if (!has_children(value)) return 0;
+/* whether row w, whose path is in t->key, shows its members: as folded
+ * there, else open when its view just made them or the mode says so. */
+static b8 is_open(tree* t, const row* w) {
+  if (!has_children(members(w))) return 0;
 
   fold f = node_find(t, t->key.s)->fold;
 
   if (f != FOLD_NONE) return f == FOLD_OPEN;
 
-  return t->mode == EXPAND_ALL || (t->mode == EXPAND_ROOTS && depth == 0);
+  return jv_is_valid(w->derived) || t->mode == EXPAND_ALL || (t->mode == EXPAND_ROOTS && w->depth == 0);
+}
+
+/* the value whose members row w lists, borrowed: the tree its view
+ * derives, else its own. */
+static jv members(const row* w) {
+  b8 derived = jv_is_valid(w->derived);
+
+  return derived ? w->derived : w->value;
 }
 
 static b8 has_children(jv v) {
@@ -563,6 +576,8 @@ static void set_view(tree* t, view_id id, time_unit unit) {
   n->view = id;
   n->unit = unit;
   n->viewed = 1;
+  remember_cursor(t);
+  rebuild(t);
 }
 
 /* makes the cursor's view the rule for its pattern, dropping the views set
@@ -681,7 +696,8 @@ static u32 hash(const char* s) {
 
 static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag, b8 dim) {
   row* w = &t->rows[r];
-  jv_kind kind = jv_get_kind(w->value);
+  jv items = members(w);
+  jv_kind kind = jv_get_kind(items);
   char buf[32];
   u8 punct = (dim ? STYLE_DIM : STYLE_PUNCT) | flag;
   view_ctx ctx = t->ctx;
@@ -690,7 +706,7 @@ static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag
   jv text;
 
   x += w->depth * 2;
-  if (has_children(w->value)) grid_put(g, x, y, max_x, w->open ? MARK_OPEN : MARK_CLOSED, 4, punct);
+  if (has_children(items)) grid_put(g, x, y, max_x, w->open ? MARK_OPEN : MARK_CLOSED, 4, punct);
 
   x += 2;
   if (w->parent < 0 && t->nroots > 1) {
@@ -707,14 +723,14 @@ static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag
   }
 
   if (kind == JV_KIND_ARRAY || kind == JV_KIND_OBJECT) {
-    i32 n = kind == JV_KIND_ARRAY
-      ? jv_array_length(jv_copy(w->value))
-      : jv_object_length(jv_copy(w->value));
+    i32 n = kind == JV_KIND_ARRAY ? jv_array_length(jv_copy(items)) : jv_object_length(jv_copy(items));
 
     if (kind == JV_KIND_ARRAY) snprintf(buf, sizeof(buf), n ? "[%d]" : "[]", n);
     else snprintf(buf, sizeof(buf), n ? "{%d}" : "{}", n);
 
-    grid_put_fit(g, x, y, max_x, buf, strlen(buf), punct);
+    x = grid_put_fit(g, x, y, max_x, buf, strlen(buf), punct);
+    if (jv_is_valid(w->derived)) grid_put(g, x + 2, y, max_x, view_name(w->view), strlen(view_name(w->view)), STYLE_EMPTY | flag);
+
     return;
   }
 
@@ -746,7 +762,8 @@ static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag
   if (tag_w) grid_put(g, x + 2, y, max_x, tag, strlen(tag), STYLE_EMPTY | flag);
 }
 
-/* the path of row r as jq writes it, after "#n " if there are more roots. */
+/* the path of row r as jq writes it, after "#n " if there are more roots,
+ * piped through the filter of each view that derived a tree on the way. */
 static void path_display(tree* t, i32 r, strbuf* b) {
   row* w = &t->rows[r];
   char num[24];
@@ -761,7 +778,18 @@ static void path_display(tree* t, i32 r, strbuf* b) {
   }
 
   path_display(t, w->parent, b);
-  if (jv_get_kind(w->key) == JV_KIND_NUMBER && t->rows[w->parent].parent < 0) sb_add(b, ".", 1);
+
+  const row* p = &t->rows[w->parent];
+  b8 first = p->parent < 0;
+
+  if (jv_is_valid(p->derived)) {
+    if (b->len && b->s[b->len - 1] != ' ') sb_add(b, " | ", 3);
+    sb_add(b, view_jq(p->view), strlen(view_jq(p->view)));
+    sb_add(b, " | ", 3);
+    first = 1;
+  }
+
+  if (jv_get_kind(w->key) == JV_KIND_NUMBER && first) sb_add(b, ".", 1);
 
   if (jv_get_kind(w->key) == JV_KIND_NUMBER) {
     snprintf(num, sizeof(num), "[%d]", (i32)jv_number_value(w->key));

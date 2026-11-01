@@ -31,6 +31,7 @@ static void test_base64(void);
 static void test_url(void);
 static void test_unhex(void);
 static void test_uuid(void);
+static void test_json(void);
 static void test_offered(void);
 static void test_names(void);
 
@@ -288,6 +289,24 @@ static void test_uuid(void) {
   ASSERT_STREQ(shown("\"919108f7-52d1-4320-9bac-f847db4148a8\"", VIEW_BASE64), "-");
 }
 
+static void test_json(void) {
+  jv v = jv_parse("\"{\\\"a\\\": [1, 2]}\"");
+  jv tree = view_tree(v, VIEW_JSON);
+
+  ASSERT_EQ(jv_get_kind(tree), JV_KIND_OBJECT);
+  CHECK(jv_equal(tree, jv_parse("{\"a\": [1, 2]}")));
+  ASSERT_STREQ(shown("\"{\\\"a\\\": 1}\"", VIEW_JSON), "-");
+  ASSERT_STREQ(view_jq(VIEW_JSON), "fromjson");
+  CHECK(view_jq(VIEW_UUID) == NULL);
+  CHECK(view_applies(jv_string("[]"), VIEW_JSON));
+  CHECK(!view_applies(jv_string("42"), VIEW_JSON));
+  CHECK(!view_applies(jv_string("\"x\""), VIEW_JSON));
+  CHECK(!view_applies(jv_string("{\"a\":"), VIEW_JSON));
+  CHECK(!view_applies(jv_string("[1] 2"), VIEW_JSON));
+  CHECK(!view_applies(jv_number(1), VIEW_JSON));
+  jv_free(v);
+}
+
 static void test_offered(void) {
   ASSERT_STREQ(offered("42"), "default hex oct bin exp iec si dur utc local date ago");
   ASSERT_STREQ(offered("1.5"), "default exp dur");
@@ -299,6 +318,7 @@ static void test_offered(void) {
   ASSERT_STREQ(offered("\"d41d8cd98f00b204e9800998ecf8427e\""), "default unhex");
   ASSERT_STREQ(offered("\"919108f7-52d1-4320-9bac-f847db4148a8\""), "default uuid");
   ASSERT_STREQ(offered("\"017f22e2-79b0-7cc3-98c4-dc0c0c07398f\""), "default utc local date ago uuid");
+  ASSERT_STREQ(offered("\"{\\\"a\\\": 1}\""), "default json");
   ASSERT_STREQ(offered("null"), "default");
   ASSERT_STREQ(offered("[1]"), "default");
 }
@@ -323,6 +343,7 @@ static void test_names(void) {
   f(test_url)                  \
   f(test_unhex)                \
   f(test_uuid)                 \
+  f(test_json)                 \
   f(test_offered)              \
   f(test_names)
 

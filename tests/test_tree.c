@@ -53,6 +53,7 @@ static void test_view_cycling(void);
 static void test_view_kept_by_path(void);
 static void test_view_keys(void);
 static void test_view_siblings(void);
+static void test_json_subtree(void);
 static void test_time_unit(void);
 
 static grid* screen;
@@ -724,6 +725,42 @@ static void test_view_keys(void) {
   app_free(a);
 }
 
+static void test_json_subtree(void) {
+  app* a = open_app("tests/data/sample.json", "select(.ok) | {p: ({a: 1730300000, b: [2]} | tojson), q: 1}");
+
+  if (!a) return;
+
+  press(a, '\t');
+  type(a, "jd");
+  ASSERT_STREQ(row(a, 1), "  \xe2\x96\xbe p: {2}  json");
+  ASSERT_STREQ(row(a, 2), "      a: 1730300000");
+  ASSERT_STREQ(row(a, 3), "    \xe2\x96\xbe b: [1]");
+  ASSERT_STREQ(row(a, 4), "        0: 2");
+  ASSERT_STREQ(row(a, 5), "    q: 1");
+  type(a, "jj");
+  ASSERT_STREQ(status(a), ".p | fromjson | .b");
+  type(a, "kt");
+  ASSERT_STREQ(row(a, 2), "      a: 2024-10-30T14:53:20Z  utc");
+  ASSERT_STREQ(status(a), ".p | fromjson | .a");
+
+  retype(a, "select(.ok) | {p: ({a: 1730300000, b: [3, 4]} | tojson), q: 1}");
+  ASSERT_STREQ(row(a, 2), "      a: 2024-10-30T14:53:20Z  utc");
+  ASSERT_STREQ(row(a, 5), "        1: 4");
+  type(a, "hh");
+  ASSERT_STREQ(row(a, 1), "  \xe2\x96\xb8 p: {2}  json");
+  ASSERT_STREQ(row(a, 2), "    q: 1");
+  press(a, '0');
+  ASSERT_STREQ(row(a, 1), "    p: \"{\\\"a\\\":1730300000,\\\"b\\\":[3,4]}\"");
+  ASSERT_STREQ(status(a), ".p");
+
+  retype(a, "select(.ok) | [1] | tojson");
+  press(a, 'd');
+  ASSERT_STREQ(row(a, 0), "\xe2\x96\xbe [1]  json");
+  press(a, 'j');
+  ASSERT_STREQ(status(a), "fromjson | .[0]");
+  app_free(a);
+}
+
 static void test_view_siblings(void) {
   app* a = open_app("tests/data/sample.json", "[.users[] | {id}]");
 
@@ -809,6 +846,7 @@ static void test_time_unit(void) {
   f(test_view_kept_by_path)               \
   f(test_view_keys)                       \
   f(test_view_siblings)                   \
+  f(test_json_subtree)                    \
   f(test_time_unit)
 
 #define TEST_HELPER_MAIN

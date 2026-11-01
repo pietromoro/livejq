@@ -73,6 +73,7 @@ static b8 uuid_instant(jv v, instant* at);
 static b8 parse_uuid(jv v, u8* out);
 static b8 uuid_time(const u8* b, instant* at);
 static u64 be(const u8* b, i32 n);
+static jv embedded_json(jv v);
 
 static const char* const iec_units[] = { "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", NULL };
 static const char* const si_units[] = { "B", "kB", "MB", "GB", "TB", "PB", "EB", NULL };
@@ -100,15 +101,20 @@ static const struct {
 i32 views_of(jv v, view_id* out, i32 cap) {
   i32 n = 0;
 
-  for (i32 id = 0; id < VIEW_COUNT && n < cap; id++) {
-    jv text = id == VIEW_DEFAULT ? jv_true() : view_text(v, (view_id)id, NULL);
-
-    if (jv_is_valid(text)) out[n++] = (view_id)id;
-
-    jv_free(text);
-  }
+  for (i32 id = 0; id < VIEW_COUNT && n < cap; id++)
+    if (view_applies(v, (view_id)id)) out[n++] = (view_id)id;
 
   return n;
+}
+
+b8 view_applies(jv v, view_id id) {
+  if (id == VIEW_DEFAULT) return 1;
+
+  jv out = view_jq(id) ? view_tree(v, id) : view_text(v, id, NULL);
+  b8 applies = jv_is_valid(out);
+
+  jv_free(out);
+  return applies;
 }
 
 const char* view_name(view_id id) {
@@ -128,6 +134,7 @@ const char* view_name(view_id id) {
     case VIEW_URL: return "url";
     case VIEW_UNHEX: return "unhex";
     case VIEW_UUID: return "uuid";
+    case VIEW_JSON: return "json";
     default: return "";
   }
 }
@@ -158,13 +165,9 @@ jv view_text(jv v, view_id id, const view_ctx* ctx) {
   }
 
   if (jv_get_kind(v) == JV_KIND_STRING && id == VIEW_BASE64) return base64(v);
-
   if (jv_get_kind(v) == JV_KIND_STRING && id == VIEW_URL) return url_decode(v);
-
   if (jv_get_kind(v) == JV_KIND_STRING && id == VIEW_UNHEX) return unhex(v);
-
   if (jv_get_kind(v) == JV_KIND_STRING && id == VIEW_UUID) return uuid(v);
-
   if (jv_get_kind(v) != JV_KIND_NUMBER) return jv_invalid();
 
   switch (id) {
@@ -180,6 +183,22 @@ jv view_text(jv v, view_id id, const view_ctx* ctx) {
     case VIEW_DATE:
     case VIEW_AGO: return as_int(v, &n) ? in_time(to_instant(n, unit), id, ctx) : jv_invalid();
     default: return jv_invalid();
+  }
+}
+
+jv view_tree(jv v, view_id id) {
+  if (jv_get_kind(v) != JV_KIND_STRING) return jv_invalid();
+
+  switch (id) {
+    case VIEW_JSON: return embedded_json(v);
+    default: return jv_invalid();
+  }
+}
+
+const char* view_jq(view_id id) {
+  switch (id) {
+    case VIEW_JSON: return "fromjson";
+    default: return NULL;
   }
 }
 
@@ -965,4 +984,16 @@ static u64 be(const u8* b, i32 n) {
   for (i32 i = 0; i < n; i++) t = t << 8 | b[i];
 
   return t;
+}
+
+/* the object or array string v holds; other values would make a tree of
+ * one leaf. */
+static jv embedded_json(jv v) {
+  jv out = jv_parse_sized(jv_string_value(v), jv_string_length_bytes(jv_copy(v)));
+  jv_kind kind = jv_get_kind(out);
+
+  if (kind == JV_KIND_OBJECT || kind == JV_KIND_ARRAY) return out;
+
+  jv_free(out);
+  return jv_invalid();
 }
