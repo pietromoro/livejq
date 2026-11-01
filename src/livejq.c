@@ -17,7 +17,6 @@ static void probe_log(i32 row, const char* fmt, ...);
 int main(int argc, char** argv) {
   cli_opts o;
   char err[256];
-  char version[64];
   cli_action action;
 
   if (argc == 2 && strcmp(argv[1], "--probe") == 0)
@@ -30,8 +29,7 @@ int main(int argc, char** argv) {
   }
 
   if (action == CLI_VERSION) {
-    cli_version(version, sizeof(version));
-    fputs(version, stdout);
+    fputs(cli_version, stdout);
     return 0;
   }
 

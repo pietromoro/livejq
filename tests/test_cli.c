@@ -76,14 +76,15 @@ static void test_unknown_option(void) {
 
 static void test_help_and_version(void) {
   cli_opts o;
-  char v[64];
 
   ASSERT_EQ(parse(&o, "--help", NULL), CLI_HELP);
   ASSERT_EQ(parse(&o, "a.json", "--version", NULL), CLI_VERSION);
   CHECK(strstr(cli_usage, "--query TEXT") != NULL);
-  cli_version(v, sizeof(v));
-  CHECK(strncmp(v, "livejq ", 7) == 0);
-  CHECK(strstr(v, "\njq 1.8.2\n") != NULL);
+  CHECK(strncmp(cli_version, "livejq ", 7) == 0);
+  CHECK(strstr(cli_version, "GNU GPL version 3") != NULL);
+  CHECK(strstr(cli_version, "  jq 1.8.2,") != NULL);
+  CHECK(strstr(cli_version, "  Oniguruma 6.9.10,") != NULL);
+  CHECK(strstr(cli_version, "  PDCursesMod 4.5.4,") != NULL);
 }
 
 static void test_query(void) {

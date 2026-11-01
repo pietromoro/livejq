@@ -31,8 +31,20 @@ const char cli_usage[] =
   "      --arg NAME VALUE     bind $NAME to the string VALUE\n"
   "      --argjson NAME JSON  bind $NAME to the JSON value\n"
   "  -h, --help               show this help\n"
-  "  -V, --version            show the livejq and jq versions\n"
+  "  -V, --version            show the version, license and acknowledgments\n"
   "      --                   end of options, the next argument is the file\n";
+
+const char cli_version[] =
+  "livejq " LIVEJQ_VERSION "\n"
+  "Copyright (C) 2026 Pietro Moro\n"
+  "License GPLv3: GNU GPL version 3 <https://gnu.org/licenses/gpl.html>.\n"
+  "This is free software: you are free to change and redistribute it.\n"
+  "There is NO WARRANTY, to the extent permitted by law.\n"
+  "\n"
+  "Built with:\n"
+  "  jq " JQ_VERSION ", Copyright (C) 2012 Stephen Dolan, MIT license\n"
+  "  Oniguruma " ONIG_VERSION ", Copyright (C) 2002-2021 K.Kosako, BSD 2-clause license\n"
+  "  PDCursesMod " PDC_VERSION ", public domain\n";
 
 cli_action cli_parse(i32 argc, char** argv, cli_opts* opts, char* err, usz errlen) {
   b8 options_done = 0;
@@ -68,10 +80,6 @@ cli_action cli_parse(i32 argc, char** argv, cli_opts* opts, char* err, usz errle
   }
 
   return CLI_RUN;
-}
-
-void cli_version(char* buf, usz len) {
-  snprintf(buf, len, "livejq %s\njq %s\n", LIVEJQ_VERSION, JQ_VERSION);
 }
 
 static b8 is(const char* s, const char* full, const char* abbr) {

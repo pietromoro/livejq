@@ -20,12 +20,12 @@ typedef struct {
 
 /* The text --help prints. */
 extern const char cli_usage[];
+/* The text --version prints: versions, license and acknowledgments. */
+extern const char cli_version[];
 
 /* Parses the arguments after argv[0] into opts, pointing into argv. On
  * CLI_RUN opts->app.args is an object for app_new to own; on any other
  * action nothing is left to free. */
 cli_action cli_parse(i32 argc, char** argv, cli_opts* opts, char* err, usz errlen);
-/* Writes the livejq and jq versions, one per line. */
-void cli_version(char* buf, usz len);
 
 #endif /* LIVEJQ_CLI_H */
