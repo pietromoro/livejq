@@ -36,7 +36,7 @@ static const entry tree_keys[] = {
     { "s", "size in iec / si units, then back" },
     { "t", "utc / local / date / ago, then back" },
     { "d", "base64 url hex uuid json jwt query, then back" },
-    { "u", "time in s / ms / \xc2\xb5s / ns, then guessed" },
+    { "u", "time or duration in s / ms / \xc2\xb5s / ns, then back" },
     { "0", "value as jq prints it" },
     { "a", "this view on every sibling with the same key" },
     { "tab", "query" },

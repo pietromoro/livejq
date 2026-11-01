@@ -41,7 +41,7 @@ typedef enum {
 /* what a view needs besides the value. */
 typedef struct {
   i64 now_ms;     /* since the epoch */
-  time_unit unit; /* of integers shown as times */
+  time_unit unit; /* of numbers shown as times or durations */
 } view_ctx;
 
 /* The views that apply to v into out, VIEW_DEFAULT first. Returns how many.
@@ -51,8 +51,9 @@ i32 views_of(jv v, view_id* out, i32 cap);
 b8 view_applies(jv v, view_id id);
 /* The view's short name, as shown next to the value. */
 const char* view_name(view_id id);
-/* Whether view id reads v as a time in a time_unit, as it does integers.
- * v is not consumed. */
+/* Whether view id reads v in a time_unit, as times do integers and
+ * durations numbers. Durations read seconds without one, so UNIT_S does
+ * not apply to them. v is not consumed. */
 b8 view_takes_unit(jv v, view_id id);
 /* The unit's short name, "" for UNIT_AUTO. */
 const char* unit_name(time_unit unit);

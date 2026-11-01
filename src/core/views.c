@@ -83,6 +83,7 @@ static jv unescape(const char* s, usz len, b8 form);
 static const char* const iec_units[] = { "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", NULL };
 static const char* const si_units[] = { "B", "kB", "MB", "GB", "TB", "PB", "EB", NULL };
 static const char* const second_units[] = { "ms", "\xc2\xb5s", "ns" };
+static const f64 per_second[] = { 1, 1, 1e3, 1e6, 1e9 }; /* by time_unit, seconds without one */
 static const char months[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
 static const char weekdays[] = "MonTueWedThuFriSatSun";
 
@@ -146,7 +147,9 @@ const char* view_name(view_id id) {
   }
 }
 
-b8 view_takes_unit(jv v, view_id id) { return jv_get_kind(v) == JV_KIND_NUMBER && is_time(id); }
+b8 view_takes_unit(jv v, view_id id) {
+  return jv_get_kind(v) == JV_KIND_NUMBER && (is_time(id) || id == VIEW_DURATION);
+}
 
 const char* unit_name(time_unit unit) {
   switch (unit) {
@@ -184,7 +187,8 @@ jv view_text(jv v, view_id id, const view_ctx* ctx) {
     case VIEW_EXPONENT: return exponent(jv_number_value(v));
     case VIEW_BYTES: return as_int(v, &n) ? bytes(n, 1024, iec_units) : jv_invalid();
     case VIEW_BYTES_SI: return as_int(v, &n) ? bytes(n, 1000, si_units) : jv_invalid();
-    case VIEW_DURATION: return duration(jv_number_value(v));
+    case VIEW_DURATION:
+      return unit == UNIT_S ? jv_invalid() : duration(jv_number_value(v) / per_second[unit]);
     case VIEW_UTC:
     case VIEW_LOCAL:
     case VIEW_DATE:

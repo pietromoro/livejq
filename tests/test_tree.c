@@ -904,6 +904,16 @@ static void test_time_unit(void) {
   type(a, "tu");
   ASSERT_STREQ(row(a, 1), "    a: 2024-10-30T14:53:20Z  utc");
 
+  retype(a, "{a: 1500}");
+  type(a, "j0Du");
+  ASSERT_STREQ(row(a, 1), "    a: 1.5s  dur ms");
+  press(a, 'u');
+  ASSERT_STREQ(row(a, 1), "    a: 1.5ms  dur \xc2\xb5s");
+  press(a, 'u');
+  ASSERT_STREQ(row(a, 1), "    a: 1.5\xc2\xb5s  dur ns");
+  press(a, 'u');
+  ASSERT_STREQ(row(a, 1), "    a: 25m  dur");
+
   retype(a, "[1730300000, 1730300090]");
   type(a, "jtua");
   ASSERT_STREQ(row(a, 1), "    0: 2024-10-30T14:53:20Z  utc s");

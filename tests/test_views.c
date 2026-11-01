@@ -190,6 +190,13 @@ static void test_units(void) {
   ASSERT_STREQ(shown_in("1730300000000", VIEW_AGO, UNIT_MS), "now");
   ASSERT_STREQ(shown_in("1730300000", VIEW_AGO, UNIT_MS), "20006d 14h ago");
   ASSERT_STREQ(shown_in("1730300000", VIEW_HEX, UNIT_MS), "0x67224860");
+  ASSERT_STREQ(shown_in("1500", VIEW_DURATION, UNIT_MS), "1.5s");
+  ASSERT_STREQ(shown_in("90000", VIEW_DURATION, UNIT_MS), "1m 30s");
+  ASSERT_STREQ(shown_in("1500", VIEW_DURATION, UNIT_US), "1.5ms");
+  ASSERT_STREQ(shown_in("2.5", VIEW_DURATION, UNIT_NS), "2.5ns");
+  ASSERT_STREQ(shown_in("1500", VIEW_DURATION, UNIT_S), "-");
+  CHECK(view_takes_unit(jv_number(1.5), VIEW_DURATION));
+  CHECK(!view_takes_unit(jv_number(1.5), VIEW_BYTES));
   ASSERT_STREQ(unit_name(UNIT_US), "\xc2\xb5s");
   ASSERT_STREQ(unit_name(UNIT_AUTO), "");
 }
