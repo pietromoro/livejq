@@ -33,6 +33,7 @@ static const entry tree_keys[] = {
     { "v V", "next / previous view" },
     { "x o b e", "hex / octal / binary / exponent, again: back" },
     { "t", "utc / local / date / ago, then back" },
+    { "u", "time in s / ms / \xc2\xb5s / ns, then guessed" },
     { "0", "value as jq prints it" },
     { "a", "this view on every sibling with the same key" },
     { "tab", "query" },

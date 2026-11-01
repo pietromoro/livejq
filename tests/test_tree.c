@@ -53,6 +53,7 @@ static void test_view_cycling(void);
 static void test_view_kept_by_path(void);
 static void test_view_keys(void);
 static void test_view_siblings(void);
+static void test_time_unit(void);
 
 static grid* screen;
 
@@ -735,6 +736,40 @@ static void test_view_siblings(void) {
   app_free(a);
 }
 
+static void test_time_unit(void) {
+  app* a = open_app("tests/data/sample.json", "{a: 1730300000, b: 1730300090000}");
+
+  if (!a) return;
+
+  press(a, '\t');
+  type(a, "jxu");
+  ASSERT_STREQ(row(a, 1), "    a: 0x67224860  hex");
+  type(a, "tu");
+  ASSERT_STREQ(row(a, 1), "    a: 2024-10-30T14:53:20Z  utc s");
+  press(a, 'u');
+  ASSERT_STREQ(row(a, 1), "    a: 1970-01-21T00:38:20.000Z  utc ms");
+  press(a, 'u');
+  ASSERT_STREQ(row(a, 1), "    a: 1970-01-01T00:28:50.300000Z  utc \xc2\xb5s");
+  press(a, 'u');
+  ASSERT_STREQ(row(a, 1), "    a: 1970-01-01T00:00:01.730300000Z  utc ns");
+  press(a, 'u');
+  ASSERT_STREQ(row(a, 1), "    a: 2024-10-30T14:53:20Z  utc");
+  type(a, "uuu");
+  type(a, "ttt");
+  ASSERT_STREQ(row(a, 1), "    a: 20026d 14h ago  ago \xc2\xb5s");
+  type(a, "0t");
+  ASSERT_STREQ(row(a, 1), "    a: 2024-10-30T14:53:20Z  utc");
+
+  type(a, "jtu");
+  ASSERT_STREQ(row(a, 2), "    b: 2024-10-30T14:54:50.000Z  utc ms");
+
+  retype(a, "[1730300000, 1730300090]");
+  type(a, "jtua");
+  ASSERT_STREQ(row(a, 1), "    0: 2024-10-30T14:53:20Z  utc s");
+  ASSERT_STREQ(row(a, 2), "    1: 2024-10-30T14:54:50Z  utc s");
+  app_free(a);
+}
+
 #define TESTS(f)                          \
   f(test_focus)                           \
   f(test_click_focuses)                   \
@@ -755,7 +790,8 @@ static void test_view_siblings(void) {
   f(test_view_cycling)                    \
   f(test_view_kept_by_path)               \
   f(test_view_keys)                       \
-  f(test_view_siblings)
+  f(test_view_siblings)                   \
+  f(test_time_unit)
 
 #define TEST_HELPER_MAIN
 

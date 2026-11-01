@@ -34,6 +34,7 @@ typedef struct {
   char* key; /* NULL when the slot is free */
   fold fold;
   view_id view;
+  time_unit unit;
   b8 viewed; /* view set on this path, overriding the rule */
 } node;
 
@@ -44,6 +45,7 @@ typedef struct {
   i32 depth;
   b8 open;
   view_id view;
+  time_unit unit;
 } row;
 
 struct tree {
@@ -86,9 +88,10 @@ static void remember_cursor(tree* t);
 static void row_key(tree* t, i32 r);
 static void key_segment(strbuf* b, jv key, i32 depth);
 static void cycle_view(tree* t, i32 step);
-static void set_view(tree* t, view_id id);
+static void cycle_unit(tree* t);
+static void set_view(tree* t, view_id id, time_unit unit);
 static void spread_view(tree* t);
-static view_id view_for(tree* t);
+static node* view_node(tree* t);
 static void pattern_of(const char* key, strbuf* b);
 static node* node_find(tree* t, const char* key);
 static node* node_at(tree* t, const char* key);
@@ -194,6 +197,9 @@ void tree_do(tree* t, tree_op op) {
     case TREE_VIEW_SIBLINGS:
       spread_view(t);
       break;
+    case TREE_UNIT_NEXT:
+      cycle_unit(t);
+      break;
   }
 
   if (t->cursor < 0) t->cursor = 0;
@@ -219,12 +225,12 @@ void tree_view(tree* t, const view_id* ids, i32 n) {
 
     jv_free(text);
     if (applies) {
-      set_view(t, ids[i]);
+      set_view(t, ids[i], t->rows[t->cursor].unit);
       return;
     }
   }
 
-  if (at >= 0) set_view(t, VIEW_DEFAULT);
+  if (at >= 0) set_view(t, VIEW_DEFAULT, t->rows[t->cursor].unit);
 }
 
 b8 tree_scroll(tree* t, i32 n) {
@@ -322,6 +328,8 @@ static void add_rows(tree* t, jv value, jv key, i32 parent, i32 depth) {
 
   if (depth > 0) key_segment(&t->key, key, depth);
 
+  node* shown = view_node(t);
+
   if (t->nrows == t->rows_cap) {
     t->rows_cap = t->rows_cap ? t->rows_cap * 2 : 64;
     t->rows = realloc(t->rows, sizeof(row) * (usz)t->rows_cap);
@@ -333,7 +341,8 @@ static void add_rows(tree* t, jv value, jv key, i32 parent, i32 depth) {
   t->rows[r].parent = parent;
   t->rows[r].depth = depth;
   t->rows[r].open = is_open(t, value, depth);
-  t->rows[r].view = view_for(t);
+  t->rows[r].view = shown->view;
+  t->rows[r].unit = shown->unit;
   t->nrows++;
   match_cursor(t, r);
 
@@ -517,16 +526,42 @@ static void cycle_view(tree* t, i32 step) {
     if (ids[i] == t->rows[t->cursor].view) at = i;
 
   at = step == 0 ? 0 : (at + step + n) % n;
-  set_view(t, ids[at]);
+  set_view(t, ids[at], step == 0 ? UNIT_AUTO : t->rows[t->cursor].unit);
 }
 
-static void set_view(tree* t, view_id id) {
+/* the next of s, ms, µs and ns the cursor's time view applies in, then
+ * back to the guessed one. */
+static void cycle_unit(tree* t) {
+  row* w = &t->rows[t->cursor];
+  view_ctx ctx = t->ctx;
+
+  if (!view_takes_unit(w->view)) return;
+
+  for (i32 u = (i32)w->unit + 1; u < UNIT_COUNT; u++) {
+    ctx.unit = (time_unit)u;
+
+    jv text = view_text(w->value, w->view, &ctx);
+    b8 applies = jv_is_valid(text);
+
+    jv_free(text);
+    if (applies) {
+      set_view(t, w->view, ctx.unit);
+      return;
+    }
+  }
+
+  set_view(t, w->view, UNIT_AUTO);
+}
+
+static void set_view(tree* t, view_id id, time_unit unit) {
   node* n;
 
   t->rows[t->cursor].view = id;
+  t->rows[t->cursor].unit = unit;
   row_key(t, t->cursor);
   n = node_at(t, t->key.s);
   n->view = id;
+  n->unit = unit;
   n->viewed = 1;
 }
 
@@ -534,7 +569,9 @@ static void set_view(tree* t, view_id id) {
  * on the paths the pattern matches. */
 static void spread_view(tree* t) {
   view_id id = t->rows[t->cursor].view;
+  time_unit unit = t->rows[t->cursor].unit;
   strbuf other = { 0 };
+  node* rule;
 
   row_key(t, t->cursor);
   pattern_of(t->key.s, &t->pattern);
@@ -546,22 +583,26 @@ static void spread_view(tree* t) {
 
     t->nodes[i].viewed = 0;
     t->nodes[i].view = VIEW_DEFAULT;
+    t->nodes[i].unit = UNIT_AUTO;
   }
 
   free(other.s);
-  node_at(t, t->pattern.s)->view = id;
+  rule = node_at(t, t->pattern.s);
+  rule->view = id;
+  rule->unit = unit;
   remember_cursor(t);
   rebuild(t);
 }
 
-/* the view set on the path in t->key, else its rule's. */
-static view_id view_for(tree* t) {
+/* the node whose view the path in t->key shows: its own when one was set
+ * on it, else its rule's. */
+static node* view_node(tree* t) {
   node* n = node_find(t, t->key.s);
 
-  if (n->viewed) return n->view;
+  if (n->viewed) return n;
 
   pattern_of(t->key.s, &t->pattern);
-  return node_find(t, t->pattern.s)->view;
+  return node_find(t, t->pattern.s);
 }
 
 /* key without its indices, #3."a"[0] -> #."a"[], so that keys differing
@@ -643,7 +684,8 @@ static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag
   jv_kind kind = jv_get_kind(w->value);
   char buf[32];
   u8 punct = (dim ? STYLE_DIM : STYLE_PUNCT) | flag;
-  const char* tag = view_name(w->view);
+  view_ctx ctx = t->ctx;
+  char tag[16];
   i32 tag_w;
   jv text;
 
@@ -676,11 +718,18 @@ static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag
     return;
   }
 
-  text = w->view == VIEW_DEFAULT ? jv_invalid() : view_text(w->value, w->view, &t->ctx);
+  ctx.unit = w->unit;
+  text = w->view == VIEW_DEFAULT ? jv_invalid() : view_text(w->value, w->view, &ctx);
+  if (w->unit != UNIT_AUTO && view_takes_unit(w->view)) {
+    snprintf(tag, sizeof(tag), "%s %s", view_name(w->view), unit_name(w->unit));
+  } else {
+    snprintf(tag, sizeof(tag), "%s", view_name(w->view));
+  }
+
   if (!jv_is_valid(text)) {
     jv_free(text);
     text = jv_dump_string(jv_copy(w->value), 0);
-    tag = "";
+    tag[0] = '\0';
   }
 
   tag_w = tag[0] ? utf8_columns(tag, strlen(tag)) + 2 : 0;

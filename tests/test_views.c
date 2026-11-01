@@ -15,6 +15,7 @@
 #define NOW_MS 1730300000000 /* 2024-10-30T14:53:20Z */
 
 static const char* shown(const char* json, view_id id);
+static const char* shown_in(const char* json, view_id id, time_unit unit);
 static const char* offered(const char* json);
 static void test_bases(void);
 static void test_negative_and_huge(void);
@@ -23,14 +24,18 @@ static void test_bytes(void);
 static void test_duration(void);
 static void test_time(void);
 static void test_relative(void);
+static void test_units(void);
 static void test_offered(void);
 static void test_names(void);
 
 /* json parsed, then in view id; "-" when the view does not apply. */
-static const char* shown(const char* json, view_id id) {
+static const char* shown(const char* json, view_id id) { return shown_in(json, id, UNIT_AUTO); }
+
+/* shown, with times read in unit. */
+static const char* shown_in(const char* json, view_id id, time_unit unit) {
   static char buf[128];
   jv v = jv_parse(json);
-  view_ctx ctx = { NOW_MS };
+  view_ctx ctx = { NOW_MS, unit };
   jv text = view_text(v, id, &ctx);
 
   if (jv_is_valid(text)) snprintf(buf, sizeof(buf), "%s", jv_string_value(text));
@@ -156,6 +161,19 @@ static void test_relative(void) {
   ASSERT_STREQ(shown("1.5", VIEW_AGO), "-");
 }
 
+static void test_units(void) {
+  ASSERT_STREQ(shown_in("1730300000", VIEW_UTC, UNIT_S), "2024-10-30T14:53:20Z");
+  ASSERT_STREQ(shown_in("1730300000", VIEW_UTC, UNIT_MS), "1970-01-21T00:38:20.000Z");
+  ASSERT_STREQ(shown_in("1730300000", VIEW_UTC, UNIT_US), "1970-01-01T00:28:50.300000Z");
+  ASSERT_STREQ(shown_in("1730300000", VIEW_UTC, UNIT_NS), "1970-01-01T00:00:01.730300000Z");
+  ASSERT_STREQ(shown_in("1730300000000", VIEW_UTC, UNIT_S), "-");
+  ASSERT_STREQ(shown_in("1730300000000", VIEW_AGO, UNIT_MS), "now");
+  ASSERT_STREQ(shown_in("1730300000", VIEW_AGO, UNIT_MS), "20006d 14h ago");
+  ASSERT_STREQ(shown_in("1730300000", VIEW_HEX, UNIT_MS), "0x67224860");
+  ASSERT_STREQ(unit_name(UNIT_US), "\xc2\xb5s");
+  ASSERT_STREQ(unit_name(UNIT_AUTO), "");
+}
+
 static void test_offered(void) {
   ASSERT_STREQ(offered("42"), "default hex oct bin exp iec si dur utc local date ago");
   ASSERT_STREQ(offered("1.5"), "default exp dur");
@@ -178,6 +196,7 @@ static void test_names(void) {
   f(test_duration)             \
   f(test_time)                 \
   f(test_relative)             \
+  f(test_units)                \
   f(test_offered)              \
   f(test_names)
 

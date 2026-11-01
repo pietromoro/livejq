@@ -35,9 +35,9 @@ static jv exponent(f64 d);
 static jv bytes(i64 n, f64 base, const char* const* units);
 static jv duration(f64 d);
 static jv short_duration(f64 d);
-static jv timestamp(i64 n, view_id id);
-static jv relative(i64 n, i64 now_ms);
-static instant to_instant(i64 n);
+static jv timestamp(i64 n, view_id id, time_unit unit);
+static jv relative(i64 n, i64 now_ms, time_unit unit);
+static instant to_instant(i64 n, time_unit unit);
 static void split(i64 t, civil* c);
 static i64 days_of(i64 y, i32 m, i32 d);
 static b8 local_offset(i64 t, i64* off);
@@ -81,7 +81,20 @@ const char* view_name(view_id id) {
   }
 }
 
+b8 view_takes_unit(view_id id) { return id == VIEW_UTC || id == VIEW_LOCAL || id == VIEW_DATE || id == VIEW_AGO; }
+
+const char* unit_name(time_unit unit) {
+  switch (unit) {
+    case UNIT_S: return "s";
+    case UNIT_MS: return "ms";
+    case UNIT_US: return "\xc2\xb5s";
+    case UNIT_NS: return "ns";
+    default: return "";
+  }
+}
+
 jv view_text(jv v, view_id id, const view_ctx* ctx) {
+  time_unit unit = ctx ? ctx->unit : UNIT_AUTO;
   i64 n;
 
   if (jv_get_kind(v) != JV_KIND_NUMBER) return jv_invalid();
@@ -96,8 +109,8 @@ jv view_text(jv v, view_id id, const view_ctx* ctx) {
     case VIEW_DURATION: return duration(jv_number_value(v));
     case VIEW_UTC:
     case VIEW_LOCAL:
-    case VIEW_DATE: return as_int(v, &n) ? timestamp(n, id) : jv_invalid();
-    case VIEW_AGO: return as_int(v, &n) ? relative(n, ctx ? ctx->now_ms : 0) : jv_invalid();
+    case VIEW_DATE: return as_int(v, &n) ? timestamp(n, id, unit) : jv_invalid();
+    case VIEW_AGO: return as_int(v, &n) ? relative(n, ctx ? ctx->now_ms : 0, unit) : jv_invalid();
     default: return jv_invalid();
   }
 }
@@ -249,8 +262,8 @@ static jv short_duration(f64 d) {
 
 /* n since the epoch as an ISO-8601 time in UTC, in local time with its
  * offset, or as a date like 20 Jan 2026 15:53:20. */
-static jv timestamp(i64 n, view_id id) {
-  instant at = to_instant(n);
+static jv timestamp(i64 n, view_id id, time_unit unit) {
+  instant at = to_instant(n, unit);
   i64 off = 0;
   civil c;
   char frac[16] = "";
@@ -299,9 +312,9 @@ static jv timestamp(i64 n, view_id id) {
 }
 
 /* n against now as its two largest parts, 2d 3h ago or in 5m 2s. */
-static jv relative(i64 n, i64 now_ms) {
+static jv relative(i64 n, i64 now_ms, time_unit unit) {
   static const i64 sizes[] = { DAY, 3600, 60, 1 };
-  instant at = to_instant(n);
+  instant at = to_instant(n, unit);
   i64 now = now_ms >= 0 ? now_ms / 1000 : (now_ms - 999) / 1000;
   i64 d = now - at.sec;
   u64 m = d < 0 ? (u64)0 - (u64)d : (u64)d;
@@ -328,12 +341,14 @@ static jv relative(i64 n, i64 now_ms) {
   return jv_string(buf);
 }
 
-/* n with its unit guessed from its size: seconds below 1e11 (year 5138),
- * then milliseconds, microseconds and nanoseconds. */
-static instant to_instant(i64 n) {
+/* n in unit, or with the unit guessed from its size: seconds below 1e11
+ * (year 5138), then milliseconds, microseconds and nanoseconds. */
+static instant to_instant(i64 n, time_unit unit) {
   static const i64 per[] = { 1, 1000, 1000000, 1000000000 };
   u64 m = n < 0 ? (u64)0 - (u64)n : (u64)n;
   i32 u = m < 100000000000ull ? 0 : m < 100000000000000ull ? 1 : m < 100000000000000000ull ? 2 : 3;
+
+  if (unit != UNIT_AUTO) u = (i32)unit - 1;
   instant at = { n / per[u], n % per[u], u * 3 };
 
   if (at.frac < 0) {
