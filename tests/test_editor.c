@@ -173,14 +173,14 @@ static void test_scroll_comes_back(void) {
   editor_free(&e);
 }
 
-#define TESTS(f)                    \
-  f(test_insert_at_cursor)          \
-  f(test_backspace)                 \
-  f(test_multibyte)                 \
-  f(test_word_moves)                \
-  f(test_deletions)                 \
-  f(test_scroll_follows_cursor)     \
-  f(test_scroll_comes_back)
+#define TESTS(f)                  \
+   f(test_insert_at_cursor)       \
+   f(test_backspace)              \
+   f(test_multibyte)              \
+   f(test_word_moves)             \
+   f(test_deletions)              \
+   f(test_scroll_follows_cursor)  \
+   f(test_scroll_comes_back)
 
 #define TEST_HELPER_MAIN
 

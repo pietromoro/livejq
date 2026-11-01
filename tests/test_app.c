@@ -42,8 +42,6 @@ static grid* screen;
 
 static app* open_app(const char* path, const char* query, b8 raw, b8 slurp, jv args, usz cap) {
   app_opts o;
-  char err[256];
-  app* a;
 
   memset(&o, 0, sizeof(o));
   o.path = path;
@@ -52,7 +50,10 @@ static app* open_app(const char* path, const char* query, b8 raw, b8 slurp, jv a
   o.slurp = slurp;
   o.args = args;
   o.cap = cap;
-  a = app_new(&o, err, sizeof(err));
+
+  char err[256];
+  app* a = app_new(&o, err, sizeof(err));
+
   if (!a) FAIL("app_new(%s): %s", path, err);
   else CHECK(app_settle(a, SETTLE_MS));
 
@@ -342,31 +343,33 @@ static void test_invalid_json_opens(void) {
 
 static void test_missing_file(void) {
   app_opts o;
-  char err[256];
 
   memset(&o, 0, sizeof(o));
   o.path = "tests/data/nope.json";
   o.args = jv_invalid();
+
+  char err[256];
+
   ASSERT_NULL(app_new(&o, err, sizeof(err)));
   CHECK(strstr(err, "tests/data/nope.json: ") == err);
 }
 
-#define TESTS(f)                               \
-  f(test_multi_document)                       \
-  f(test_raw_lines)                            \
-  f(test_raw_slurp)                            \
-  f(test_slurp)                                \
-  f(test_args)                                 \
-  f(test_compile_error_keeps_last_good)        \
-  f(test_runtime_error_keeps_partial_outputs)  \
-  f(test_empty_output)                         \
-  f(test_query_highlighted)                    \
-  f(test_output_cap)                           \
-  f(test_debounce)                             \
-  f(test_changed_only_when_shown)              \
-  f(test_cancel_on_edit)                       \
-  f(test_invalid_json_opens)                   \
-  f(test_missing_file)
+#define TESTS(f)                                \
+   f(test_multi_document)                       \
+   f(test_raw_lines)                            \
+   f(test_raw_slurp)                            \
+   f(test_slurp)                                \
+   f(test_args)                                 \
+   f(test_compile_error_keeps_last_good)        \
+   f(test_runtime_error_keeps_partial_outputs)  \
+   f(test_empty_output)                         \
+   f(test_query_highlighted)                    \
+   f(test_output_cap)                           \
+   f(test_debounce)                             \
+   f(test_changed_only_when_shown)              \
+   f(test_cancel_on_edit)                       \
+   f(test_invalid_json_opens)                   \
+   f(test_missing_file)
 
 #define TEST_HELPER_MAIN
 

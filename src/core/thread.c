@@ -72,13 +72,12 @@ void condvar_free(condvar* c) {
 void condvar_broadcast(condvar* c) { pthread_cond_broadcast(&c->c); }
 
 b8 condvar_wait(condvar* c, mutex* m, i64 timeout_ms) {
-  struct timespec ts;
-
   if (timeout_ms < 0) {
     pthread_cond_wait(&c->c, &m->m);
     return 1;
   }
 
+  struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
   ts.tv_sec += (time_t)(timeout_ms / 1000);
   ts.tv_nsec += (timeout_ms % 1000) * 1000000;

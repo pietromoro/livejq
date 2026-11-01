@@ -189,19 +189,19 @@ static void test_short_forms(void) {
 }
 
 #define TESTS(f)              \
-  f(test_file_only)           \
-  f(test_file_required)       \
-  f(test_one_file)            \
-  f(test_unknown_option)      \
-  f(test_help_and_version)    \
-  f(test_query)               \
-  f(test_input_modes)         \
-  f(test_watch)               \
-  f(test_watch_malformed)     \
-  f(test_args)                \
-  f(test_argjson_malformed)   \
-  f(test_end_of_options)      \
-  f(test_short_forms)
+   f(test_file_only)          \
+   f(test_file_required)      \
+   f(test_one_file)           \
+   f(test_unknown_option)     \
+   f(test_help_and_version)   \
+   f(test_query)              \
+   f(test_input_modes)        \
+   f(test_watch)              \
+   f(test_watch_malformed)    \
+   f(test_args)               \
+   f(test_argjson_malformed)  \
+   f(test_end_of_options)     \
+   f(test_short_forms)
 
 #define TEST_HELPER_MAIN
 

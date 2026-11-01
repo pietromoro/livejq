@@ -162,9 +162,6 @@ static void worker_main(void* arg) {
   u64 done = 0;
 
   for (;;) {
-    job j;
-    eval_result r;
-
     mutex_lock(e->lock);
     while (!e->quit && e->submitted == done)
       condvar_wait(e->changed, e->lock, -1);
@@ -174,6 +171,7 @@ static void worker_main(void* arg) {
       return;
     }
 
+    job j;
     j.id = done = e->submitted;
     j.query = e->query;
     j.cap = e->cap;
@@ -193,6 +191,7 @@ static void worker_main(void* arg) {
     atomic_set(&e->cancel, 0);
     mutex_unlock(e->lock);
 
+    eval_result r;
     if (run(e, &j, &r)) {
       mutex_lock(e->lock);
       if (r.id == e->submitted) {

@@ -228,11 +228,11 @@ static b8 as_int(jv v, i64* out) {
 
   if (jv_number_has_literal(v)) {
     const char* lit = jv_number_get_literal(v);
-    char* end;
-    i64 n;
 
     errno = 0;
-    n = strtoll(lit, &end, 10);
+
+    char* end;
+    i64 n = strtoll(lit, &end, 10);
     if (errno == 0 && *end == '\0' && end != lit) {
       *out = n;
       return 1;
@@ -248,7 +248,6 @@ static b8 as_int(jv v, i64* out) {
 static jv in_base(i64 n, u32 base, const char* prefix) {
   u64 m = n < 0 ? (u64)0 - (u64)n : (u64)n;
   char digits[65];
-  char buf[72];
   usz i = sizeof(digits) - 1;
 
   digits[i] = '\0';
@@ -257,24 +256,25 @@ static jv in_base(i64 n, u32 base, const char* prefix) {
     m /= base;
   } while (m);
 
+  char buf[72];
   snprintf(buf, sizeof(buf), "%s%s%s", n < 0 ? "-" : "", prefix, digits + i);
   return jv_string(buf);
 }
 
 /* the fewest digits that read back as d, as 1.5e3 rather than 1.5e+03. */
 static jv exponent(f64 d) {
-  char buf[40];
-  char out[48];
-  char* e;
   i32 p = 0;
 
   if (!isfinite(d) || d == 0) return jv_invalid();
 
+  char buf[40];
   do snprintf(buf, sizeof(buf), "%.*e", p, d);
   while (strtod(buf, NULL) != d && ++p < 17);
 
-  e = strchr(buf, 'e');
+  char* e = strchr(buf, 'e');
   *e = '\0';
+
+  char out[48];
   snprintf(out, sizeof(out), "%se%d", buf, atoi(e + 1));
   return jv_string(out);
 }
@@ -284,7 +284,6 @@ static jv bytes(i64 n, f64 base, const char* const* units) {
   f64 v = fabs((f64)n);
   i32 u = 0;
   i32 dec;
-  char num[32];
   char buf[48];
 
   if (v < base) {
@@ -303,6 +302,7 @@ static jv bytes(i64 n, f64 base, const char* const* units) {
     u++;
   }
 
+  char num[32];
   put_trimmed(num, sizeof(num), v, dec);
   snprintf(buf, sizeof(buf), "%s%s %s", n < 0 ? "-" : "", num, units[u]);
   return jv_string(buf);
@@ -323,8 +323,23 @@ static jv duration(f64 d) {
 
   n = (usz)snprintf(buf, sizeof(buf), "%s", d < 0 ? "-" : "");
   if (ms >= 86400000) n += (usz)snprintf(buf + n, sizeof(buf) - n, "%" PRId64 "d ", ms / 86400000);
-  if (ms / 3600000 % 24) n += (usz)snprintf(buf + n, sizeof(buf) - n, "%" PRId64 "h ", ms / 3600000 % 24);
-  if (ms / 60000 % 60) n += (usz)snprintf(buf + n, sizeof(buf) - n, "%" PRId64 "m ", ms / 60000 % 60);
+  if (ms / 3600000 % 24) {
+    n += (usz)snprintf(
+      buf + n,
+      sizeof(buf) - n,
+      "%" PRId64 "h ",
+      ms / 3600000 % 24
+    );
+  }
+
+  if (ms / 60000 % 60) {
+    n += (usz)snprintf(
+      buf + n,
+      sizeof(buf) - n,
+      "%" PRId64 "m ",
+      ms / 60000 % 60
+    );
+  }
 
   sec = ms % 60000;
   if (sec % 1000) {
@@ -347,8 +362,6 @@ static jv short_duration(f64 d) {
   f64 v = fabs(d) * 1000;
   i32 u = 0;
   i32 dec;
-  char num[32];
-  char buf[48];
 
   while (v < 1 && u < 2) {
     v *= 1000;
@@ -361,7 +374,10 @@ static jv short_duration(f64 d) {
     u--;
   }
 
+  char num[32];
   put_trimmed(num, sizeof(num), v, dec);
+
+  char buf[48];
   snprintf(buf, sizeof(buf), "%s%s%s", d < 0 ? "-" : "", num, second_units[u]);
   return jv_string(buf);
 }
@@ -383,13 +399,13 @@ static jv timestamp(instant at, view_id id) {
 
   civil c;
   char frac[16] = "";
-  char buf[64];
 
   split(at.sec + off, &c);
   if (c.year < 0 || c.year > 9999) return jv_invalid();
 
   if (at.digits) snprintf(frac, sizeof(frac), ".%0*" PRId64, at.digits, at.frac);
 
+  char buf[64];
   if (id == VIEW_UTC) {
     snprintf(
       buf,
@@ -431,19 +447,25 @@ static jv relative(instant at, i64 now_ms) {
   i64 now = now_ms >= 0 ? now_ms / 1000 : (now_ms - 999) / 1000;
   i64 d = now - at.sec;
   u64 m = d < 0 ? (u64)0 - (u64)d : (u64)d;
-  char buf[64];
   usz len = 0;
   i32 parts = 0;
 
   if (m == 0) return jv_string("now");
 
+  char buf[64];
   if (d < 0) len += (usz)snprintf(buf, sizeof(buf), "in ");
   for (i32 i = 0; i < 4 && parts < 2; i++) {
     if (m < (u64)sizes[i] && parts == 0) continue;
 
     if (m < (u64)sizes[i]) break;
 
-    len += (usz)snprintf(buf + len, sizeof(buf) - len, "%" PRIu64 "%c ", m / (u64)sizes[i], "dhms"[i]);
+    len += (usz)snprintf(
+      buf + len,
+      sizeof(buf) - len,
+      "%" PRIu64 "%c ",
+      m / (u64)sizes[i],
+      "dhms"[i]
+    );
     m %= (u64)sizes[i];
     parts++;
   }
@@ -480,8 +502,13 @@ static b8 parse_iso(const char* s, instant* at) {
   i64 off = 0;
 
   *at = (instant){ 0 };
-  if (!digits(&s, 4, &y) || *s++ != '-' || !digits(&s, 2, &c.mon) || *s++ != '-' || !digits(&s, 2, &c.day))
-    return 0;
+  if (
+    !digits(&s, 4, &y)
+    || *s++ != '-'
+    || !digits(&s, 2, &c.mon)
+    || *s++ != '-'
+    || !digits(&s, 2, &c.day)
+  ) return 0;
 
   c.year = y;
   if (*s == '\0') return from_civil(&c, 0, at);
@@ -723,7 +750,8 @@ static jv base64(jv v) {
   b8 binary = len >= MIN_BINARY && from_hex(jv_string_value(v), len, NULL) < 0;
   jv out = jv_invalid();
 
-  if (n > 0 && is_text(buf, (usz)n)) out = jv_dump_string(jv_string_sized((const char*)buf, (i32)n), 0);
+  if (n > 0 && is_text(buf, (usz)n))
+    out = jv_dump_string(jv_string_sized((const char*)buf, (i32)n), 0);
   else if (n > 0 && binary) out = hex_dump(buf, (usz)n);
 
   free(buf);
@@ -762,7 +790,8 @@ static jv unhex(jv v) {
   i64 n = from_hex(jv_string_value(v), len, buf);
   jv out = jv_invalid();
 
-  if (n > 0 && is_text(buf, (usz)n)) out = jv_dump_string(jv_string_sized((const char*)buf, (i32)n), 0);
+  if (n > 0 && is_text(buf, (usz)n))
+    out = jv_dump_string(jv_string_sized((const char*)buf, (i32)n), 0);
   else if (n > 0) out = hex_dump(buf, (usz)n);
 
   free(buf);
@@ -854,7 +883,8 @@ static i32 base64_digit(char c, char* alphabet) {
  * line breaks. */
 static b8 is_text(const u8* b, usz len) {
   jv s = jv_string_sized((const char*)b, (i32)len);
-  b8 same = (usz)jv_string_length_bytes(jv_copy(s)) == len && memcmp(jv_string_value(s), b, len) == 0;
+  b8 same = (usz)jv_string_length_bytes(jv_copy(s)) == len;
+  same = same && memcmp(jv_string_value(s), b, len) == 0;
 
   jv_free(s);
   if (!same) return 0;
@@ -873,7 +903,8 @@ static jv hex_dump(const u8* b, usz len) {
   char buf[MAX_DUMP * 3 + 8];
   usz n = 0;
 
-  for (usz i = 0; i < len && i < MAX_DUMP; i++) n += (usz)snprintf(buf + n, sizeof(buf) - n, i ? " %02x" : "%02x", b[i]);
+  for (usz i = 0; i < len && i < MAX_DUMP; i++)
+    n += (usz)snprintf(buf + n, sizeof(buf) - n, i ? " %02x" : "%02x", b[i]);
 
   if (len > MAX_DUMP) snprintf(buf + n, sizeof(buf) - n, " \xe2\x80\xa6");
 
@@ -999,8 +1030,13 @@ static jv jwt(jv v) {
   const char* dot = strchr(s, '.');
   const char* sig = dot ? strchr(dot + 1, '.') : NULL;
 
-  if (!sig || strspn(sig + 1, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") != strlen(sig + 1))
-    return jv_invalid();
+  if (
+    !sig
+    || strspn(
+      sig + 1,
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    ) != strlen(sig + 1)
+  ) return jv_invalid();
 
   jv header = jwt_part(s, (usz)(dot - s));
   jv payload = jwt_part(dot + 1, (usz)(sig - dot - 1));
@@ -1011,7 +1047,11 @@ static jv jwt(jv v) {
     return jv_invalid();
   }
 
-  return jv_object_set(jv_object_set(jv_object(), jv_string("header"), header), jv_string("payload"), payload);
+  return jv_object_set(
+    jv_object_set(jv_object(), jv_string("header"), header),
+    jv_string("payload"),
+    payload
+  );
 }
 
 /* the object len bytes of base64 at s hold. */

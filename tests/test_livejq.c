@@ -24,9 +24,9 @@ static void test_primitive_sizes(void) {
   ASSERT_EQ(sizeof(i64), 8);
 }
 
-#define TESTS(f)     \
-  f(test_array_len)  \
-  f(test_primitive_sizes)
+#define TESTS(f)      \
+   f(test_array_len)  \
+   f(test_primitive_sizes)
 
 #define TEST_HELPER_MAIN
 

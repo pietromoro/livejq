@@ -103,7 +103,10 @@ static b8 option(i32 argc, char** argv, i32* i, cli_opts* opts, char* err, usz e
   if (is(s, "--query-folder", "-d"))
     return (opts->query_folder = value(argc, argv, i, err, errlen)) != NULL;
   if (is(s, "--watch", "-w")) return watch(argc, argv, i, opts, err, errlen);
-  if (strcmp(s, "--arg") == 0 || strcmp(s, "--argjson") == 0) return bind_arg(argc, argv, i, opts, err, errlen);
+  if (
+    strcmp(s, "--arg") == 0
+    || strcmp(s, "--argjson") == 0
+  ) return bind_arg(argc, argv, i, opts, err, errlen);
 
   snprintf(err, errlen, "unknown option %s", s);
   return 0;

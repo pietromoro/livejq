@@ -16,12 +16,12 @@ static void probe_log(i32 row, const char* fmt, ...);
 
 int main(int argc, char** argv) {
   cli_opts o;
-  char err[256];
   cli_action action;
 
   if (argc == 2 && strcmp(argv[1], "--probe") == 0)
     return probe();
 
+  char err[256];
   action = cli_parse(argc, argv, &o, err, sizeof(err));
   if (action == CLI_HELP) {
     fputs(cli_usage, stdout);

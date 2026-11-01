@@ -106,7 +106,9 @@ static usz closing(lexer* lx, usz i) {
 static usz dot(lexer* lx, usz i) {
   if (i + 1 < lx->len && isdigit((u8)lx->s[i + 1])) return number(lx, i);
   if (i + 1 < lx->len && lx->s[i + 1] == '.') return paint(lx, i, i + 2, STYLE_KEY);
-  if (i + 1 < lx->len && name_start(lx->s[i + 1])) return paint(lx, i, name_end(lx, i + 1), STYLE_KEY);
+  if (i + 1 < lx->len && name_start(lx->s[i + 1]))
+    return paint(lx, i, name_end(lx, i + 1), STYLE_KEY);
+
   return paint(lx, i, i + 1, STYLE_KEY);
 }
 
@@ -149,7 +151,10 @@ static usz operator(lexer* lx, usz i) {
   for (usz k = 0; k < ARRAY_LEN(ops); k++) {
     usz n = strlen(ops[k]);
 
-    if (n <= lx->len - i && memcmp(lx->s + i, ops[k], n) == 0) return paint(lx, i, i + n, STYLE_OPERATOR);
+    if (
+      n <= lx->len - i
+      && memcmp(lx->s + i, ops[k], n) == 0
+    ) return paint(lx, i, i + n, STYLE_OPERATOR);
   }
 
   return invalid(lx, i);
@@ -206,8 +211,12 @@ static u8 word_style(const char* s, usz n) {
   for (usz k = 0; k < ARRAY_LEN(keywords); k++)
     if (strlen(keywords[k]) == n && memcmp(s, keywords[k], n) == 0) return STYLE_KEYWORD;
 
-  for (usz k = 0; k < ARRAY_LEN(literals); k++)
-    if (strlen(literals[k].name) == n && memcmp(s, literals[k].name, n) == 0) return literals[k].style;
+  for (usz k = 0; k < ARRAY_LEN(literals); k++) {
+    if (
+      strlen(literals[k].name) == n
+      && memcmp(s, literals[k].name, n) == 0
+    ) return literals[k].style;
+  }
 
   return STYLE_BUILTIN;
 }

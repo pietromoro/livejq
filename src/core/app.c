@@ -67,7 +67,6 @@ static i32 segment(grid* g, i32 x, const char* s, u8 st);
 
 app* app_new(const app_opts* opts, char* err, usz errlen) {
   const char* q = opts->query ? opts->query : ".";
-  const char* slash;
   load_result loaded;
   file_stamp stamp;
   app* a;
@@ -80,7 +79,7 @@ app* app_new(const app_opts* opts, char* err, usz errlen) {
   a = calloc(1, sizeof(*a));
   if (!a) abort();
 
-  slash = strrchr(opts->path, '/');
+  const char* slash = strrchr(opts->path, '/');
 #ifdef _WIN32
   if (strrchr(opts->path, '\\') > slash) slash = strrchr(opts->path, '\\');
 #endif
@@ -161,7 +160,16 @@ void app_render(app* a, grid* g) {
   if (a->has_result && n == 0 && jv_get_kind(a->error) == JV_KIND_NULL)
     grid_put_fit(g, TREE_X, TREE_Y, g->w - 1, "(no output)", 11, STYLE_EMPTY);
 
-  tree_render(a->tree, g, TREE_X, TREE_Y, g->w - 1, g->h - TREE_Y - 2, a->stale, a->focus == FOCUS_TREE);
+  tree_render(
+    a->tree, g,
+    TREE_X,
+    TREE_Y,
+    g->w - 1,
+    g->h - TREE_Y - 2,
+    a->stale,
+    a->focus == FOCUS_TREE
+  );
+
   render_status(a, g);
   help_bar(g, g->h - 1, a->focus);
   if (!a->help) return;
@@ -288,7 +296,11 @@ static void tree_key(app* a, u32 key) {
       tree_view(a->tree, (view_id[]){ VIEW_UTC, VIEW_LOCAL, VIEW_DATE, VIEW_AGO }, 4);
       break;
     case 'd':
-      tree_view(a->tree, (view_id[]){ VIEW_BASE64, VIEW_URL, VIEW_UNHEX, VIEW_UUID, VIEW_JSON, VIEW_JWT, VIEW_QUERY }, 7);
+      tree_view(
+        a->tree,
+        (view_id[]){ VIEW_BASE64, VIEW_URL, VIEW_UNHEX, VIEW_UUID, VIEW_JSON, VIEW_JWT, VIEW_QUERY },
+        7
+      );
       break;
     case 'u':
       tree_do(a->tree, TREE_UNIT_NEXT);
@@ -322,7 +334,12 @@ static b8 mouse(app* a, app_event ev) {
   if (!in_tree) return a->focus != was;
 
   a->focus = FOCUS_TREE;
-  return tree_click(a->tree, ev.x - TREE_X, ev.y - TREE_Y, was == FOCUS_TREE) || a->focus != was;
+  return tree_click(
+    a->tree,
+    ev.x - TREE_X,
+    ev.y - TREE_Y,
+    was == FOCUS_TREE
+  ) || a->focus != was;
 }
 
 /* true when the file changed and was read again. */
@@ -345,9 +362,10 @@ static b8 poll(app* a, i64 now) {
 static void reload(app* a) {
   load_result loaded;
   file_stamp stamp;
-  char err[256];
 
   jv_free(a->load_error);
+
+  char err[256];
   if (!load_file(a->path, a->raw, a->slurp, &loaded, &stamp, err, sizeof(err))) {
     a->load_error = jv_string(err);
     return;
@@ -451,9 +469,16 @@ static void render_query(app* a, grid* g) {
   if (!styles) abort();
 
   grid_box(g, 0, 0, g->w, QUERY_ROWS, border);
-  x = grid_put(g, 2, 1, g->w - 2, PROMPT, strlen(PROMPT), a->focus == FOCUS_QUERY ? STYLE_ACCENT : STYLE_BORDER);
+  x = grid_put(
+    g, 2, 1,
+    g->w - 2,
+    PROMPT,
+    strlen(PROMPT),
+    a->focus == FOCUS_QUERY ? STYLE_ACCENT : STYLE_BORDER
+  );
   highlight(a->query.text, a->query.len, styles);
-  if (a->query.len == 0) grid_put_fit(g, x, 1, g->w - 2, PLACEHOLDER, strlen(PLACEHOLDER), STYLE_EMPTY);
+  if (a->query.len == 0)
+    grid_put_fit(g, x, 1, g->w - 2, PLACEHOLDER, strlen(PLACEHOLDER), STYLE_EMPTY);
 
   x = editor_render(&a->query, g, x, 1, g->w - 2, styles);
   free(styles);
@@ -468,9 +493,6 @@ static void render_query(app* a, grid* g) {
 static void render_status(app* a, grid* g) {
   i32 y = g->h - 2;
   jv err = jv_get_kind(a->error) == JV_KIND_STRING ? a->error : a->load_error;
-  char outputs[64];
-  char time[32];
-  char path[512];
   i32 name_w;
   i32 right;
   i32 x;
@@ -478,6 +500,9 @@ static void render_status(app* a, grid* g) {
   if (y < 0) return;
 
   grid_fill(g, y, STYLE_STATUS);
+
+  char outputs[64];
+  char time[32];
   if (a->has_result) {
     snprintf(
       outputs,
@@ -498,7 +523,15 @@ static void render_status(app* a, grid* g) {
 
   name_w = utf8_columns(a->name, strlen(a->name));
   if (name_w > (right - x) / 2 - 2) name_w = (right - x) / 2 - 2;
-  if (name_w > 0) x = grid_put_fit(g, x + 1, y, x + 1 + name_w, a->name, strlen(a->name), STYLE_STATUS) + 1;
+  if (name_w > 0) {
+    x = grid_put_fit(
+      g, x + 1, y,
+      x + 1 + name_w,
+      a->name,
+      strlen(a->name),
+      STYLE_STATUS
+    ) + 1;
+  }
 
   if (jv_get_kind(err) == JV_KIND_STRING) {
     const char* s = jv_string_value(err);
@@ -506,6 +539,7 @@ static void render_status(app* a, grid* g) {
 
     grid_put_fit(g, x + 1, y, right - 1, s, nl ? (usz)(nl - s) : strlen(s), STYLE_STATUS_ERROR);
   } else {
+    char path[512];
     tree_path(a->tree, path, sizeof(path));
     grid_put_fit(g, x + 1, y, right - 1, path, strlen(path), STYLE_STATUS_FAINT);
   }

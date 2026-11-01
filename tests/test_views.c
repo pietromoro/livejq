@@ -12,9 +12,9 @@
 
 #include "test_helper.in"
 
-#define TOKEN                                                                                                 \
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1PjE_IiwiaWF0IjoxNzMwMzAwMDAwLCJleHAiOjE3MzAzMDM2MDAsIm4i" \
-  "OiJcdTAwZTgifQ.c2ln_-"
+#define TOKEN                                                                                                   \
+   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1PjE_IiwiaWF0IjoxNzMwMzAwMDAwLCJleHAiOjE3MzAzMDM2MDAsIm4i"  \
+   "OiJcdTAwZTgifQ.c2ln_-"
 #define NOW_MS 1730300000000 /* 2024-10-30T14:53:20Z */
 
 static const char* shown(const char* json, view_id id);
@@ -207,7 +207,10 @@ static void test_iso_strings(void) {
   ASSERT_STREQ(shown("\"2024-10-30T11:23:20-0330\"", VIEW_UTC), "2024-10-30T14:53:20Z");
   ASSERT_STREQ(shown("\"2024-10-30 14:53:20.5Z\"", VIEW_UTC), "2024-10-30T14:53:20.500Z");
   ASSERT_STREQ(shown("\"2024-10-30T14:53:20,1234Z\"", VIEW_UTC), "2024-10-30T14:53:20.123400Z");
-  ASSERT_STREQ(shown("\"2024-10-30T14:53:20.1234567891Z\"", VIEW_UTC), "2024-10-30T14:53:20.123456789Z");
+  ASSERT_STREQ(
+    shown("\"2024-10-30T14:53:20.1234567891Z\"", VIEW_UTC),
+    "2024-10-30T14:53:20.123456789Z"
+  );
   ASSERT_STREQ(shown("\"2024-10-30T14:53\"", VIEW_UTC), "2024-10-30T14:53:00Z");
   ASSERT_STREQ(shown("\"2024-10-30\"", VIEW_UTC), "2024-10-30T00:00:00Z");
   ASSERT_STREQ(shown("\"2024-02-29\"", VIEW_UTC), "2024-02-29T00:00:00Z");
@@ -247,7 +250,10 @@ static void test_base64(void) {
   ASSERT_STREQ(shown("\"YT4_fn5-\"", VIEW_BASE64), "\"a>?~~~\"");
   ASSERT_STREQ(shown("\"bGluZQpicmVhaw==\"", VIEW_BASE64), "\"line\\nbreak\"");
   ASSERT_STREQ(shown("\"w6h0w6A=\"", VIEW_BASE64), "\"\xc3\xa8t\xc3\xa0\"");
-  ASSERT_STREQ(shown("\"3q2+7wABAgMEBQYHCAkKCw==\"", VIEW_BASE64), "de ad be ef 00 01 02 03 04 05 06 07 08 09 0a 0b");
+  ASSERT_STREQ(
+    shown("\"3q2+7wABAgMEBQYHCAkKCw==\"", VIEW_BASE64),
+    "de ad be ef 00 01 02 03 04 05 06 07 08 09 0a 0b"
+  );
   ASSERT_STREQ(shown("\"3q2+7w==\"", VIEW_BASE64), "-");
   ASSERT_STREQ(shown("\"test\"", VIEW_BASE64), "-");
   ASSERT_STREQ(shown("\"YT4/fn5-\"", VIEW_BASE64), "-");
@@ -291,9 +297,18 @@ static void test_unhex(void) {
 
 static void test_uuid(void) {
   ASSERT_STREQ(shown("\"919108f7-52d1-4320-9bac-f847db4148a8\"", VIEW_UUID), "v4");
-  ASSERT_STREQ(shown("\"017F22E2-79B0-7CC3-98C4-DC0C0C07398F\"", VIEW_UUID), "v7 2022-02-22T19:22:22.000Z");
-  ASSERT_STREQ(shown("\"C232AB00-9414-11EC-B3C8-9F6BDECED846\"", VIEW_UUID), "v1 2022-02-22T19:22:22.0000000Z");
-  ASSERT_STREQ(shown("\"1EC9414C-232A-6B00-B3C8-9F6BDECED846\"", VIEW_UUID), "v6 2022-02-22T19:22:22.0000000Z");
+  ASSERT_STREQ(
+    shown("\"017F22E2-79B0-7CC3-98C4-DC0C0C07398F\"", VIEW_UUID),
+    "v7 2022-02-22T19:22:22.000Z"
+  );
+  ASSERT_STREQ(
+    shown("\"C232AB00-9414-11EC-B3C8-9F6BDECED846\"", VIEW_UUID),
+    "v1 2022-02-22T19:22:22.0000000Z"
+  );
+  ASSERT_STREQ(
+    shown("\"1EC9414C-232A-6B00-B3C8-9F6BDECED846\"", VIEW_UUID),
+    "v6 2022-02-22T19:22:22.0000000Z"
+  );
   ASSERT_STREQ(shown("\"00000000-0000-0000-0000-000000000000\"", VIEW_UUID), "nil");
   ASSERT_STREQ(shown("\"FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF\"", VIEW_UUID), "max");
   ASSERT_STREQ(shown("\"919108f7-52d1-4320-cbac-f847db4148a8\"", VIEW_UUID), "microsoft");
@@ -302,9 +317,15 @@ static void test_uuid(void) {
   ASSERT_STREQ(shown("\"919108f7-52d1-4320-9bac-f847db4148ag\"", VIEW_UUID), "-");
   ASSERT_STREQ(shown("\"919108f7-52d14-320-9bac-f847db4148a8\"", VIEW_UUID), "-");
   ASSERT_STREQ(shown("42", VIEW_UUID), "-");
-  ASSERT_STREQ(shown("\"017F22E2-79B0-7CC3-98C4-DC0C0C07398F\"", VIEW_UTC), "2022-02-22T19:22:22.000Z");
+  ASSERT_STREQ(
+    shown("\"017F22E2-79B0-7CC3-98C4-DC0C0C07398F\"", VIEW_UTC),
+    "2022-02-22T19:22:22.000Z"
+  );
   ASSERT_STREQ(shown("\"017F22E2-79B0-7CC3-98C4-DC0C0C07398F\"", VIEW_AGO), "980d 19h ago");
-  ASSERT_STREQ(shown("\"C232AB00-9414-11EC-B3C8-9F6BDECED846\"", VIEW_UTC), "2022-02-22T19:22:22.0000000Z");
+  ASSERT_STREQ(
+    shown("\"C232AB00-9414-11EC-B3C8-9F6BDECED846\"", VIEW_UTC),
+    "2022-02-22T19:22:22.0000000Z"
+  );
   ASSERT_STREQ(shown("\"919108f7-52d1-4320-9bac-f847db4148a8\"", VIEW_UTC), "-");
   ASSERT_STREQ(shown("\"919108f7-52d1-4320-9bac-f847db4148a8\"", VIEW_BASE64), "-");
 }
@@ -345,8 +366,14 @@ static void test_jwt(void) {
 }
 
 static void test_query(void) {
-  CHECK(fields("a=1&b=two+words&c=%C3%A8", "{\"a\": \"1\", \"b\": \"two words\", \"c\": \"\xc3\xa8\"}"));
-  CHECK(fields("https://x.io/p?q=jq&tag=a&tag=b&tag=c#top", "{\"q\": \"jq\", \"tag\": [\"a\", \"b\", \"c\"]}"));
+  CHECK(fields(
+    "a=1&b=two+words&c=%C3%A8",
+    "{\"a\": \"1\", \"b\": \"two words\", \"c\": \"\xc3\xa8\"}"
+  ));
+  CHECK(fields(
+    "https://x.io/p?q=jq&tag=a&tag=b&tag=c#top",
+    "{\"q\": \"jq\", \"tag\": [\"a\", \"b\", \"c\"]}"
+  ));
   CHECK(fields("a=1&flag", "{\"a\": \"1\", \"flag\": \"\"}"));
   CHECK(fields("a=1&&b=x=y&", "{\"a\": \"1\", \"b\": \"x=y\"}"));
   CHECK(fields("?a%26b=%3D", "{\"a&b\": \"=\"}"));
@@ -373,7 +400,10 @@ static void test_offered(void) {
   ASSERT_STREQ(offered("\"a%20b\""), "default url");
   ASSERT_STREQ(offered("\"d41d8cd98f00b204e9800998ecf8427e\""), "default unhex");
   ASSERT_STREQ(offered("\"919108f7-52d1-4320-9bac-f847db4148a8\""), "default uuid");
-  ASSERT_STREQ(offered("\"017f22e2-79b0-7cc3-98c4-dc0c0c07398f\""), "default utc local date ago uuid");
+  ASSERT_STREQ(
+    offered("\"017f22e2-79b0-7cc3-98c4-dc0c0c07398f\""),
+    "default utc local date ago uuid"
+  );
   ASSERT_STREQ(offered("\"{\\\"a\\\": 1}\""), "default json");
   ASSERT_STREQ(offered("\"" TOKEN "\""), "default jwt");
   ASSERT_STREQ(offered("\"a=1&b=2\""), "default query");
@@ -387,26 +417,26 @@ static void test_names(void) {
   ASSERT_STREQ(view_name(VIEW_DEFAULT), "");
 }
 
-#define TESTS(f)               \
-  f(test_bases)                \
-  f(test_negative_and_huge)    \
-  f(test_exponent)             \
-  f(test_bytes)                \
-  f(test_duration)             \
-  f(test_time)                 \
-  f(test_relative)             \
-  f(test_units)                \
-  f(test_iso_strings)          \
-  f(test_rfc2822_strings)      \
-  f(test_base64)               \
-  f(test_url)                  \
-  f(test_unhex)                \
-  f(test_uuid)                 \
-  f(test_json)                 \
-  f(test_jwt)                  \
-  f(test_query)                \
-  f(test_offered)              \
-  f(test_names)
+#define TESTS(f)              \
+   f(test_bases)              \
+   f(test_negative_and_huge)  \
+   f(test_exponent)           \
+   f(test_bytes)              \
+   f(test_duration)           \
+   f(test_time)               \
+   f(test_relative)           \
+   f(test_units)              \
+   f(test_iso_strings)        \
+   f(test_rfc2822_strings)    \
+   f(test_base64)             \
+   f(test_url)                \
+   f(test_unhex)              \
+   f(test_uuid)               \
+   f(test_json)               \
+   f(test_jwt)                \
+   f(test_query)              \
+   f(test_offered)            \
+   f(test_names)
 
 #define TEST_HELPER_MAIN
 

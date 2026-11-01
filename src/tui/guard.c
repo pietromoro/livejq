@@ -22,7 +22,7 @@ void guard_disarm(void) {}
 /* mouse modes off, default attributes, cursor shown and reset, both
  * screen switches undone. */
 #define RESTORE \
-  "\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[0m\033[?25h\033[?47l\033[?1049l\033[0 q"
+   "\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[0m\033[?25h\033[?47l\033[?1049l\033[0 q"
 
 static void restore(void);
 static void on_signal(i32 sig);

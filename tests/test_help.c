@@ -23,13 +23,14 @@ static grid* screen;
 
 static app* open_app(const char* path) {
   app_opts o;
-  char err[256];
-  app* a;
 
   memset(&o, 0, sizeof(o));
   o.path = path;
   o.args = jv_invalid();
-  a = app_new(&o, err, sizeof(err));
+
+  char err[256];
+  app* a = app_new(&o, err, sizeof(err));
+
   if (!a) FAIL("app_new(%s): %s", path, err);
   else CHECK(app_settle(a, SETTLE_MS));
 
@@ -47,10 +48,10 @@ static void press(app* a, u32 key) {
 
 /* true when some line of the screen holds s. */
 static b8 shows(app* a, const char* s) {
-  char buf[W * 4 + 1];
-
   app_render(a, screen);
   for (i32 y = 0; y < screen->h; y++) {
+    char buf[W * 4 + 1];
+
     grid_line(screen, y, buf, sizeof(buf));
     if (strstr(buf, s)) return 1;
   }
@@ -168,11 +169,11 @@ static void test_help_scrolls(void) {
   app_free(a);
 }
 
-#define TESTS(f)              \
-  f(test_help_in_tree)        \
-  f(test_help_in_query)       \
-  f(test_help_clipped)        \
-  f(test_help_scrolls)
+#define TESTS(f)          \
+   f(test_help_in_tree)   \
+   f(test_help_in_query)  \
+   f(test_help_clipped)   \
+   f(test_help_scrolls)
 
 #define TEST_HELPER_MAIN
 

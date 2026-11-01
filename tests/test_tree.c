@@ -10,9 +10,9 @@
 
 #include "test_helper.in"
 
-#define TOKEN                                                                                                 \
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1PjE_IiwiaWF0IjoxNzMwMzAwMDAwLCJleHAiOjE3MzAzMDM2MDAsIm4i" \
-  "OiJcdTAwZTgifQ.c2ln_-"
+#define TOKEN                                                                                                   \
+   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1PjE_IiwiaWF0IjoxNzMwMzAwMDAwLCJleHAiOjE3MzAzMDM2MDAsIm4i"  \
+   "OiJcdTAwZTgifQ.c2ln_-"
 #define W         60
 #define H         16
 #define TOP       4 /* the tree's first row */
@@ -72,15 +72,16 @@ static app* open_app(const char* path, const char* query) { return open_watched(
 
 static app* open_watched(const char* path, const char* query, i64 watch_ms) {
   app_opts o;
-  char err[256];
-  app* a;
 
   memset(&o, 0, sizeof(o));
   o.path = path;
   o.query = query;
   o.args = jv_invalid();
   o.watch_ms = watch_ms;
-  a = app_new(&o, err, sizeof(err));
+
+  char err[256];
+  app* a = app_new(&o, err, sizeof(err));
+
   if (!a) FAIL("app_new(%s): %s", path, err);
   else CHECK(app_settle(a, SETTLE_MS));
 
@@ -631,7 +632,13 @@ static void test_watch_keeps_last_good(void) {
   char path[512];
   app* a;
 
-  snprintf(path, sizeof(path), "%s/livejq-midwrite-%" PRId64 ".json", dir ? dir : "/tmp", clock_us());
+  snprintf(
+    path,
+    sizeof(path),
+    "%s/livejq-midwrite-%" PRId64 ".json",
+    dir ? dir : "/tmp",
+    clock_us()
+  );
   write_file(path, "{\"a\":1,\"b\":2}");
   a = open_watched(path, ".", 1000);
   if (!a) return;
@@ -689,13 +696,18 @@ static void test_single_root_unlabeled(void) {
 }
 
 static void test_truncation(void) {
-  app* a = open_app("tests/data/sample.json", "select(.ok) | {name: \"a string far too long to fit\"}");
+  app* a = open_app(
+    "tests/data/sample.json",
+    "select(.ok) | {name: \"a string far too long to fit\"}"
+  );
   if (!a) return;
 
   grid* narrow = grid_new(20, H);
-  char buf[128];
 
   app_render(a, narrow);
+
+  char buf[128];
+
   grid_line(narrow, TOP + 1, buf, sizeof(buf));
   ASSERT_STREQ(buf, "      name: \"a str\xe2\x80\xa6");
   ASSERT_EQ(grid_at(narrow, 18, TOP + 1).style, STYLE_STRING);
@@ -846,7 +858,10 @@ static void test_view_keys(void) {
 }
 
 static void test_json_subtree(void) {
-  app* a = open_app("tests/data/sample.json", "select(.ok) | {p: ({a: 1730300000, b: [2]} | tojson), q: 1}");
+  app* a = open_app(
+    "tests/data/sample.json",
+    "select(.ok) | {p: ({a: 1730300000, b: [2]} | tojson), q: 1}"
+  );
 
   if (!a) return;
 
@@ -997,33 +1012,33 @@ static void test_time_unit(void) {
 }
 
 #define TESTS(f)                          \
-  f(test_focus)                           \
-  f(test_click_focuses)                   \
-  f(test_click_picks_lines)               \
-  f(test_wheel_scrolls)                   \
-  f(test_quit_keys)                       \
-  f(test_navigation)                      \
-  f(test_fold_and_unfold)                 \
-  f(test_fold_subtree)                    \
-  f(test_page_up_and_down)                \
-  f(test_query_edit_keeps_state)          \
-  f(test_cursor_falls_back_to_ancestor)   \
-  f(test_reload_keeps_state)              \
-  f(test_reload_keeps_views)              \
-  f(test_watch_reloads)                   \
-  f(test_watch_keeps_last_good)           \
-  f(test_default_expansion)               \
-  f(test_single_root_unlabeled)           \
-  f(test_truncation)                      \
-  f(test_path_quoting)                    \
-  f(test_view_cycling)                    \
-  f(test_view_kept_by_path)               \
-  f(test_view_keys)                       \
-  f(test_view_siblings)                   \
-  f(test_json_subtree)                    \
-  f(test_jwt_subtree)                     \
-  f(test_query_subtree)                   \
-  f(test_time_unit)
+   f(test_focus)                          \
+   f(test_click_focuses)                  \
+   f(test_click_picks_lines)              \
+   f(test_wheel_scrolls)                  \
+   f(test_quit_keys)                      \
+   f(test_navigation)                     \
+   f(test_fold_and_unfold)                \
+   f(test_fold_subtree)                   \
+   f(test_page_up_and_down)               \
+   f(test_query_edit_keeps_state)         \
+   f(test_cursor_falls_back_to_ancestor)  \
+   f(test_reload_keeps_state)             \
+   f(test_reload_keeps_views)             \
+   f(test_watch_reloads)                  \
+   f(test_watch_keeps_last_good)          \
+   f(test_default_expansion)              \
+   f(test_single_root_unlabeled)          \
+   f(test_truncation)                     \
+   f(test_path_quoting)                   \
+   f(test_view_cycling)                   \
+   f(test_view_kept_by_path)              \
+   f(test_view_keys)                      \
+   f(test_view_siblings)                  \
+   f(test_json_subtree)                   \
+   f(test_jwt_subtree)                    \
+   f(test_query_subtree)                  \
+   f(test_time_unit)
 
 #define TEST_HELPER_MAIN
 

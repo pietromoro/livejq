@@ -71,10 +71,9 @@ static char* read_all(const char* path, usz* len) {
     usz got;
 
     if (n == cap) {
-      char* grown;
-
       cap = cap ? cap * 2 : 65536;
-      grown = realloc(buf, cap);
+
+      char* grown = realloc(buf, cap);
       if (!grown) {
         free(buf);
         fclose(f);

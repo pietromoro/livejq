@@ -302,8 +302,6 @@ void tree_path(tree* t, char* buf, usz cap) {
 }
 
 static void rebuild(tree* t) {
-  char num[24];
-
   for (i32 i = 0; i < t->nrows; i++) {
     jv_free(t->rows[i].value);
     jv_free(t->rows[i].derived);
@@ -315,6 +313,8 @@ static void rebuild(tree* t) {
   t->best_len = 0;
   for (i32 i = 0; i < t->nroots; i++) {
     sb_cut(&t->key, 0);
+
+    char num[24];
     snprintf(num, sizeof(num), "#%d", i);
     sb_add(&t->key, num, strlen(num));
     add_rows(t, jv_array_get(jv_copy(t->roots), i), jv_number(i), -1, 0);
@@ -495,8 +495,6 @@ static void remember_cursor(tree* t) {
 
 /* the path of row r into t->key, in the encoding folds are keyed by. */
 static void row_key(tree* t, i32 r) {
-  char num[24];
-
   if (t->rows[r].parent >= 0) {
     row_key(t, t->rows[r].parent);
     key_segment(&t->key, t->rows[r].key, t->rows[r].depth);
@@ -504,6 +502,8 @@ static void row_key(tree* t, i32 r) {
   }
 
   sb_cut(&t->key, 0);
+
+  char num[24];
   snprintf(num, sizeof(num), "#%d", (i32)jv_number_value(t->rows[r].key));
   sb_add(&t->key, num, strlen(num));
 }
@@ -568,12 +568,11 @@ static void cycle_unit(tree* t) {
 }
 
 static void set_view(tree* t, view_id id, time_unit unit) {
-  node* n;
-
   t->rows[t->cursor].view = id;
   t->rows[t->cursor].unit = unit;
   row_key(t, t->cursor);
-  n = node_at(t, t->key.s);
+
+  node* n = node_at(t, t->key.s);
   n->view = id;
   n->unit = unit;
   n->viewed = 1;
@@ -587,7 +586,6 @@ static void spread_view(tree* t) {
   view_id id = t->rows[t->cursor].view;
   time_unit unit = t->rows[t->cursor].unit;
   strbuf other = { 0 };
-  node* rule;
 
   row_key(t, t->cursor);
   pattern_of(t->key.s, &t->pattern);
@@ -603,7 +601,8 @@ static void spread_view(tree* t) {
   }
 
   free(other.s);
-  rule = node_at(t, t->pattern.s);
+
+  node* rule = node_at(t, t->pattern.s);
   rule->view = id;
   rule->unit = unit;
   remember_cursor(t);
@@ -630,10 +629,16 @@ static view_id implied_view(tree* t, i32 parent, jv key) {
   const row* token = &t->rows[payload->parent];
   const char* name = jv_string_value(key);
 
-  if (token->view != VIEW_JWT || !jv_is_valid(token->derived) || strcmp(jv_string_value(payload->key), "payload") != 0)
-    return VIEW_DEFAULT;
+  if (
+    token->view != VIEW_JWT
+    || !jv_is_valid(token->derived)
+    || strcmp(jv_string_value(payload->key), "payload") != 0
+  ) return VIEW_DEFAULT;
 
-  return strcmp(name, "exp") == 0 || strcmp(name, "iat") == 0 || strcmp(name, "nbf") == 0 ? VIEW_DATE : VIEW_DEFAULT;
+  if (strcmp(name, "exp") == 0 || strcmp(name, "iat") == 0 || strcmp(name, "nbf") == 0)
+    return VIEW_DATE;
+
+  return VIEW_DEFAULT;
 }
 
 /* key without its indices, #3."a"[0] -> #."a"[], so that keys differing
@@ -668,8 +673,6 @@ static node* node_find(tree* t, const char* key) {
 
 /* the node for key, added when missing. */
 static node* node_at(tree* t, const char* key) {
-  node* f;
-
   if ((t->nnodes + 1) * 4 > t->nodes_cap * 3) {
     node* old = t->nodes;
     usz old_cap = t->nodes_cap;
@@ -687,7 +690,7 @@ static node* node_at(tree* t, const char* key) {
     free(old);
   }
 
-  f = node_find(t, key);
+  node* f = node_find(t, key);
   if (f->key) return f;
 
   f->key = malloc(strlen(key) + 1);
@@ -745,7 +748,14 @@ static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag
     else snprintf(buf, sizeof(buf), n ? "{%d}" : "{}", n);
 
     x = grid_put_fit(g, x, y, max_x, buf, strlen(buf), punct);
-    if (jv_is_valid(w->derived)) grid_put(g, x + 2, y, max_x, view_name(w->view), strlen(view_name(w->view)), STYLE_EMPTY | flag);
+    if (jv_is_valid(w->derived)) {
+      grid_put(
+        g, x + 2, y, max_x,
+        view_name(w->view),
+        strlen(view_name(w->view)),
+        STYLE_EMPTY | flag
+      );
+    }
 
     return;
   }

@@ -116,19 +116,19 @@ static void test_empty(void) {
   ASSERT_EQ(st[0], 0xff);
 }
 
-#define TESTS(f)                    \
-  f(test_paths_and_pipes)           \
-  f(test_keywords_and_variables)    \
-  f(test_strings)                   \
-  f(test_numbers_and_literals)      \
-  f(test_formats_and_operators)     \
-  f(test_object_keys)               \
-  f(test_definitions)               \
-  f(test_comment)                   \
-  f(test_unmatched_brackets)        \
-  f(test_unterminated_strings)      \
-  f(test_invalid_characters)        \
-  f(test_empty)
+#define TESTS(f)                   \
+   f(test_paths_and_pipes)         \
+   f(test_keywords_and_variables)  \
+   f(test_strings)                 \
+   f(test_numbers_and_literals)    \
+   f(test_formats_and_operators)   \
+   f(test_object_keys)             \
+   f(test_definitions)             \
+   f(test_comment)                 \
+   f(test_unmatched_brackets)      \
+   f(test_unterminated_strings)    \
+   f(test_invalid_characters)      \
+   f(test_empty)
 
 #define TEST_HELPER_MAIN
 

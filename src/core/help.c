@@ -167,7 +167,8 @@ static void scrollbar(grid* g, i32 x, i32 y, const help_view* v, i32 n) {
 
   if (size < 1) size = 1;
   at = ((track - size) * v->top + v->max / 2) / v->max;
-  for (i32 i = 0; i < size; i++) grid_put(g, x, y + 1 + at + i, x + 1, THUMB, strlen(THUMB), STYLE_BORDER_FOCUS);
+  for (i32 i = 0; i < size; i++)
+    grid_put(g, x, y + 1 + at + i, x + 1, THUMB, strlen(THUMB), STYLE_BORDER_FOCUS);
 }
 
 /* the rows key scrolls v by, past the end for the ends, 0 when it does
