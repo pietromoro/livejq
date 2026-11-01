@@ -221,6 +221,34 @@ const char* view_jq(view_id id) {
   }
 }
 
+void view_clock(i64 ms, i64 now_ms, char* buf, usz cap) {
+  i64 t = ms >= 0 ? ms / 1000 : (ms - 999) / 1000;
+  i64 now = now_ms >= 0 ? now_ms / 1000 : (now_ms - 999) / 1000;
+  i64 off = 0;
+  i64 now_off = 0;
+
+  local_offset(t, &off);
+  local_offset(now, &now_off);
+
+  civil c;
+
+  split(t + off, &c);
+
+  civil today;
+
+  split(now + now_off, &today);
+
+  const char* mon = months + (c.mon - 1) * 3;
+  char date[32] = "";
+
+  if (c.year != today.year)
+    snprintf(date, sizeof(date), "%d %.3s %" PRId64 " ", c.day, mon, c.year);
+  else if (c.mon != today.mon || c.day != today.day)
+    snprintf(date, sizeof(date), "%d %.3s ", c.day, mon);
+
+  snprintf(buf, cap, "%s%02d:%02d:%02d", date, c.hour, c.min, c.sec);
+}
+
 /* the literal when the file wrote one, since a double loses digits past
  * 2^53; otherwise the double, if it is exact. */
 static b8 as_int(jv v, i64* out) {

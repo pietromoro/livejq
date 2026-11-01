@@ -27,6 +27,7 @@ static void test_bytes(void);
 static void test_duration(void);
 static void test_time(void);
 static void test_relative(void);
+static void test_clock(void);
 static void test_units(void);
 static void test_iso_strings(void);
 static void test_rfc2822_strings(void);
@@ -179,6 +180,20 @@ static void test_relative(void) {
   ASSERT_STREQ(shown("1730300000999", VIEW_AGO), "now");
   ASSERT_STREQ(shown("0", VIEW_AGO), "20026d 14h ago");
   ASSERT_STREQ(shown("1.5", VIEW_AGO), "-");
+}
+
+static void test_clock(void) {
+  setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1);
+  tzset();
+
+  char buf[32];
+
+  view_clock(1730300000000, 1730303600000, buf, sizeof(buf));
+  ASSERT_STREQ(buf, "15:53:20");
+  view_clock(1730329200000, 1730300000000, buf, sizeof(buf));
+  ASSERT_STREQ(buf, "31 Oct 00:00:00");
+  view_clock(1730300000000, 1768924800000, buf, sizeof(buf));
+  ASSERT_STREQ(buf, "30 Oct 2024 15:53:20");
 }
 
 static void test_units(void) {
@@ -425,6 +440,7 @@ static void test_names(void) {
    f(test_duration)           \
    f(test_time)               \
    f(test_relative)           \
+   f(test_clock)              \
    f(test_units)              \
    f(test_iso_strings)        \
    f(test_rfc2822_strings)    \

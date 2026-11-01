@@ -67,5 +67,8 @@ jv view_tree(jv v, view_id id);
 /* The jq filter that derives view id's tree from the value, NULL when the
  * view makes none. */
 const char* view_jq(view_id id);
+/* The local time of ms since the epoch into buf: 14:53:20 on now_ms's
+ * day, 30 Oct 14:53:20 in its year, 30 Oct 2024 14:53:20 otherwise. */
+void view_clock(i64 ms, i64 now_ms, char* buf, usz cap);
 
 #endif /* LIVEJQ_VIEWS_H */

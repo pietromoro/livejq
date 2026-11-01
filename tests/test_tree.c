@@ -6,7 +6,9 @@
 
 #include "app.h"
 #include "defines.h"
+#include "loader.h"
 #include "thread.h"
+#include "views.h"
 
 #include "test_helper.in"
 
@@ -54,6 +56,7 @@ static void test_reload_keeps_views(void);
 static void test_watch_reloads(void);
 static void test_watch_keeps_last_good(void);
 static void test_watch_missing_file(void);
+static void test_watch_times(void);
 static void test_default_expansion(void);
 static void test_single_root_unlabeled(void);
 static void test_truncation(void);
@@ -701,6 +704,63 @@ static void test_watch_missing_file(void) {
   app_free(a);
 }
 
+static void test_watch_times(void) {
+  const char* dir = getenv("TMPDIR");
+  char path[512];
+
+  snprintf(path, sizeof(path), "%s/livejq-times-%" PRId64 ".json", dir ? dir : "/tmp", clock_us());
+  write_file(path, "[1]");
+
+  app* a = open_watched(path, ".", 1000);
+
+  if (!a) return;
+
+  tick(a, 0);
+
+  file_stamp st;
+
+  file_stat(path, &st);
+
+  grid* wide = grid_new(140, H);
+
+  app_render(a, wide);
+
+  char buf[1024];
+
+  grid_line(wide, H - 2, buf, sizeof(buf));
+  CHECK(strstr(buf, " \xe2\x9f\xb3 1s  mod ") != NULL);
+
+  char at[32];
+
+  view_clock(st.mtime_ns / 1000000, WALL_MS, at, sizeof(at));
+
+  char want[96];
+
+  snprintf(want, sizeof(want), " mod %s  loaded ", at);
+  CHECK(strstr(buf, want) != NULL);
+  view_clock(WALL_MS, WALL_MS, at, sizeof(at));
+  snprintf(want, sizeof(want), " loaded %s ", at);
+  CHECK(strstr(buf, want) != NULL);
+
+  app_event ev = { 0 };
+
+  write_file(path, "[1,2]");
+  ev.kind = EV_TICK;
+  ev.now_ms = 1000;
+  ev.wall_ms = WALL_MS + 60000;
+  app_feed(a, ev);
+  CHECK(app_settle(a, SETTLE_MS));
+  app_render(a, wide);
+  grid_line(wide, H - 2, buf, sizeof(buf));
+  view_clock(WALL_MS + 60000, WALL_MS + 60000, at, sizeof(at));
+  snprintf(want, sizeof(want), " loaded %s ", at);
+  CHECK(strstr(buf, want) != NULL);
+  CHECK(strstr(line(a, H - 2), " mod ") == NULL);
+  grid_free(wide);
+  remove(path);
+  app_free(a);
+}
+
 static void test_default_expansion(void) {
   app* a = open_app("tests/data/sample.json", "select(.ok) | {a: [range(2000)], b: [1]}");
 
@@ -1065,6 +1125,7 @@ static void test_time_unit(void) {
    f(test_watch_reloads)                  \
    f(test_watch_keeps_last_good)          \
    f(test_watch_missing_file)             \
+   f(test_watch_times)                    \
    f(test_default_expansion)              \
    f(test_single_root_unlabeled)          \
    f(test_truncation)                     \

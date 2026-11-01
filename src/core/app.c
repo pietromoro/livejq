@@ -11,6 +11,7 @@
 #include "highlight.h"
 #include "loader.h"
 #include "tree.h"
+#include "views.h"
 
 #define DEBOUNCE_MS 150
 #define DEFAULT_CAP 10000
@@ -20,6 +21,8 @@
 #define TREE_X      2
 #define PROMPT      "\xe2\x9d\xaf "
 #define PLACEHOLDER "a jq filter"
+#define WATCHING    "\xe2\x9f\xb3 "
+#define MIN_PATH    16 /* columns the path keeps before the times go, an error keeps all */
 #define CTRL(c)     ((c) & 0x1f)
 
 struct app {
@@ -32,6 +35,8 @@ struct app {
   i64 poll_at;     /* next look at the file, 0 before the first tick */
   file_stamp stamp;
   b8 missing;      /* the watched file is gone, the last data stays */
+  i64 wall_ms;     /* of the last event */
+  i64 loaded_ms;   /* when the data was last read, 0 before the first event */
   eval* ev;
   tree* tree;
   app_focus focus;
@@ -65,6 +70,8 @@ static b8 apply(app* a);
 static b8 failed(const app* a);
 static void render_query(app* a, grid* g);
 static void render_status(app* a, grid* g);
+static void times(const app* a, char* buf, usz cap, i32 room);
+static b8 add_part(char* buf, usz cap, usz* n, const char* part, i32 room);
 static i32 segment(grid* g, i32 x, const char* s, u8 st);
 
 app* app_new(const app_opts* opts, char* err, usz errlen) {
@@ -127,6 +134,9 @@ b8 app_feed(app* a, app_event ev) {
   b8 changed = ev.kind != EV_TICK;
 
   tree_clock(a->tree, ev.wall_ms);
+  a->wall_ms = ev.wall_ms;
+  if (!a->loaded_ms) a->loaded_ms = ev.wall_ms;
+
   switch (ev.kind) {
     case EV_KEY:
       key(a, ev);
@@ -391,6 +401,7 @@ static void reload(app* a) {
     return;
   }
 
+  a->loaded_ms = a->wall_ms;
   eval_set_inputs(a->ev, loaded.inputs);
   submit(a);
 }
@@ -507,6 +518,7 @@ static void render_status(app* a, grid* g) {
   i32 y = g->h - 2;
   jv err = jv_get_kind(a->error) == JV_KIND_STRING ? a->error : a->load_error;
   i32 name_w;
+  i32 end;
   i32 right;
   i32 x;
 
@@ -533,8 +545,24 @@ static void render_status(app* a, grid* g) {
   const char* pill = a->missing ? " MISSING " : failed(a) ? " ERROR " : " LIVEJQ ";
 
   x = segment(g, 0, pill, failed(a) ? STYLE_PILL_ERROR : STYLE_PILL);
-  right = g->w - utf8_columns(outputs, strlen(outputs)) - utf8_columns(time, strlen(time));
-  if (right < x) right = x;
+  end = g->w - utf8_columns(outputs, strlen(outputs)) - utf8_columns(time, strlen(time));
+  if (end < x) end = x;
+
+  b8 erred = jv_get_kind(err) == JV_KIND_STRING;
+  char path[512];
+  const char* mid = path;
+
+  if (erred) mid = jv_string_value(err);
+  else tree_path(a->tree, path, sizeof(path));
+
+  const char* nl = strchr(mid, '\n');
+  usz mid_len = nl ? (usz)(nl - mid) : strlen(mid);
+  i32 keep = erred ? utf8_columns(mid, mid_len) : MIN_PATH;
+  u8 mid_style = erred ? STYLE_STATUS_ERROR : STYLE_STATUS_FAINT;
+  char info[160];
+
+  times(a, info, sizeof(info), end - x - utf8_columns(a->name, strlen(a->name)) - 2 - keep);
+  right = end - utf8_columns(info, strlen(info));
 
   name_w = utf8_columns(a->name, strlen(a->name));
   if (name_w > (right - x) / 2 - 2) name_w = (right - x) / 2 - 2;
@@ -548,18 +576,47 @@ static void render_status(app* a, grid* g) {
     ) + 1;
   }
 
-  if (jv_get_kind(err) == JV_KIND_STRING) {
-    const char* s = jv_string_value(err);
-    const char* nl = strchr(s, '\n');
+  grid_put_fit(g, x + 1, y, right - 1, mid, mid_len, mid_style);
+  segment(g, right, info, STYLE_STATUS);
+  segment(g, segment(g, end, outputs, STYLE_STATUS_INFO), time, STYLE_STATUS_TIME);
+}
 
-    grid_put_fit(g, x + 1, y, right - 1, s, nl ? (usz)(nl - s) : strlen(s), STYLE_STATUS_ERROR);
-  } else {
-    char path[512];
-    tree_path(a->tree, path, sizeof(path));
-    grid_put_fit(g, x + 1, y, right - 1, path, strlen(path), STYLE_STATUS_FAINT);
+/* the watch interval, the file's modification time and when it was last
+ * read, as many of them as fit in room columns. */
+static void times(const app* a, char* buf, usz cap, i32 room) {
+  char at[32];
+  usz n = 0;
+
+  buf[0] = '\0';
+
+  char part[64];
+
+  if (a->watch_ms) {
+    jv every = view_text(jv_number((f64)a->watch_ms / 1000), VIEW_DURATION, NULL);
+
+    snprintf(part, sizeof(part), " " WATCHING "%s ", jv_string_value(every));
+    jv_free(every);
+    if (!add_part(buf, cap, &n, part, room)) return;
   }
 
-  segment(g, segment(g, right, outputs, STYLE_STATUS_INFO), time, STYLE_STATUS_TIME);
+  view_clock(a->stamp.mtime_ns / 1000000, a->wall_ms, at, sizeof(at));
+  snprintf(part, sizeof(part), " mod %s ", at);
+  if (!add_part(buf, cap, &n, part, room) || !a->loaded_ms) return;
+
+  view_clock(a->loaded_ms, a->wall_ms, at, sizeof(at));
+  snprintf(part, sizeof(part), " loaded %s ", at);
+  add_part(buf, cap, &n, part, room);
+}
+
+/* appends part to the n bytes of buf when they still fit in room columns. */
+static b8 add_part(char* buf, usz cap, usz* n, const char* part, i32 room) {
+  usz len = strlen(part);
+
+  if (*n + len >= cap || utf8_columns(buf, *n) + utf8_columns(part, len) > room) return 0;
+
+  memcpy(buf + *n, part, len + 1);
+  *n += len;
+  return 1;
 }
 
 static i32 segment(grid* g, i32 x, const char* s, u8 st) {
