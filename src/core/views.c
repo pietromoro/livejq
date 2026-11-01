@@ -12,6 +12,8 @@
 #define MAX_EXACT   9007199254740992.0 /* 2^53 */
 #define MAX_SECONDS 1e15               /* its milliseconds still fit an i64 */
 #define DAY         86400
+#define MIN_BINARY  16  /* base64 shorter than this must decode to text */
+#define MAX_DUMP    256 /* bytes shown as hex, the rest cut */
 
 /* a moment, from a number whose unit was guessed. */
 typedef struct {
@@ -55,6 +57,11 @@ static b8 local_offset(i64 t, i64* off);
 static b8 local_tm(time_t t, struct tm* out);
 static f64 round3(f64 v, i32* dec);
 static void put_trimmed(char* buf, usz cap, f64 v, i32 dec);
+static jv base64(jv v);
+static i64 from_base64(const char* s, usz len, u8* out);
+static i32 base64_digit(char c, char* alphabet);
+static b8 is_text(const u8* b, usz len);
+static jv hex_dump(const u8* b, usz len);
 
 static const char* const iec_units[] = { "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", NULL };
 static const char* const si_units[] = { "B", "kB", "MB", "GB", "TB", "PB", "EB", NULL };
@@ -106,6 +113,7 @@ const char* view_name(view_id id) {
     case VIEW_LOCAL: return "local";
     case VIEW_DATE: return "date";
     case VIEW_AGO: return "ago";
+    case VIEW_BASE64: return "b64";
     default: return "";
   }
 }
@@ -132,6 +140,8 @@ jv view_text(jv v, view_id id, const view_ctx* ctx) {
 
     return parse_iso(s, &at) || parse_rfc2822(s, &at) ? in_time(at, id, ctx) : jv_invalid();
   }
+
+  if (jv_get_kind(v) == JV_KIND_STRING && id == VIEW_BASE64) return base64(v);
 
   if (jv_get_kind(v) != JV_KIND_NUMBER) return jv_invalid();
 
@@ -636,4 +646,108 @@ static void put_trimmed(char* buf, usz cap, f64 v, i32 dec) {
   len = strlen(buf);
   while (buf[len - 1] == '0') buf[--len] = '\0';
   if (buf[len - 1] == '.') buf[--len] = '\0';
+}
+
+/* the bytes v decodes to from base64, as a string when they are text and as
+ * hex otherwise; short strings must be text, since most words decode. */
+static jv base64(jv v) {
+  usz len = (usz)jv_string_length_bytes(jv_copy(v));
+  u8* buf = malloc(len / 4 * 3 + 3);
+  i64 n = from_base64(jv_string_value(v), len, buf);
+  jv out = jv_invalid();
+
+  if (n > 0 && is_text(buf, (usz)n)) out = jv_dump_string(jv_string_sized((const char*)buf, (i32)n), 0);
+  else if (n > 0 && len >= MIN_BINARY) out = hex_dump(buf, (usz)n);
+
+  free(buf);
+  return out;
+}
+
+/* s in base64 or base64url, padded or not, into out. Returns the byte
+ * count, -1 when s is neither or mixes the two. */
+static i64 from_base64(const char* s, usz len, u8* out) {
+  char alphabet = 0;
+  u32 acc = 0;
+  i64 n = 0;
+  usz pad = 0;
+
+  while (pad < 2 && len > pad && s[len - pad - 1] == '=') pad++;
+  if (pad && len % 4) return -1;
+
+  len -= pad;
+  if (len % 4 == 1) return -1;
+
+  for (usz i = 0; i < len; i++) {
+    i32 d = base64_digit(s[i], &alphabet);
+
+    if (d < 0) return -1;
+
+    acc = acc << 6 | (u32)d;
+    if (i % 4 == 3) {
+      out[n++] = (u8)(acc >> 16);
+      out[n++] = (u8)(acc >> 8);
+      out[n++] = (u8)acc;
+      acc = 0;
+    }
+  }
+
+  if (len % 4 == 2) {
+    if (acc & 0xf) return -1;
+
+    out[n++] = (u8)(acc >> 4);
+  } else if (len % 4 == 3) {
+    if (acc & 0x3) return -1;
+
+    out[n++] = (u8)(acc >> 10);
+    out[n++] = (u8)(acc >> 2);
+  }
+
+  return n;
+}
+
+/* c's value, -1 when it is no digit or belongs to the other alphabet than
+ * the one *alphabet already saw ('+' or '-', 0 for none yet). */
+static i32 base64_digit(char c, char* alphabet) {
+  if (c >= 'A' && c <= 'Z') return c - 'A';
+
+  if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+
+  if (c >= '0' && c <= '9') return c - '0' + 52;
+
+  char kind = c == '+' || c == '/' ? '+' : c == '-' || c == '_' ? '-' : 0;
+
+  if (!kind || (*alphabet && *alphabet != kind)) return -1;
+
+  *alphabet = kind;
+  return c == '+' || c == '-' ? 62 : 63;
+}
+
+/* whether b is valid UTF-8 without control characters other than tab and
+ * line breaks. */
+static b8 is_text(const u8* b, usz len) {
+  jv s = jv_string_sized((const char*)b, (i32)len);
+  b8 same = (usz)jv_string_length_bytes(jv_copy(s)) == len && memcmp(jv_string_value(s), b, len) == 0;
+
+  jv_free(s);
+  if (!same) return 0;
+
+  for (usz i = 0; i < len; i++) {
+    if (b[i] == 0x7f || (b[i] < 0x20 && b[i] != '\t' && b[i] != '\n' && b[i] != '\r')) return 0;
+
+    if (b[i] == 0xc2 && i + 1 < len && b[i + 1] < 0xa0) return 0;
+  }
+
+  return 1;
+}
+
+/* b as hex pairs, one space apart, cut after MAX_DUMP bytes. */
+static jv hex_dump(const u8* b, usz len) {
+  char buf[MAX_DUMP * 3 + 8];
+  usz n = 0;
+
+  for (usz i = 0; i < len && i < MAX_DUMP; i++) n += (usz)snprintf(buf + n, sizeof(buf) - n, i ? " %02x" : "%02x", b[i]);
+
+  if (len > MAX_DUMP) snprintf(buf + n, sizeof(buf) - n, " \xe2\x80\xa6");
+
+  return jv_string(buf);
 }

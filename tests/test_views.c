@@ -27,6 +27,7 @@ static void test_relative(void);
 static void test_units(void);
 static void test_iso_strings(void);
 static void test_rfc2822_strings(void);
+static void test_base64(void);
 static void test_offered(void);
 static void test_names(void);
 
@@ -215,12 +216,34 @@ static void test_rfc2822_strings(void) {
   ASSERT_STREQ(shown("\"30 Oct 2024\"", VIEW_UTC), "-");
 }
 
+static void test_base64(void) {
+  ASSERT_STREQ(shown("\"aGVsbG8gd29ybGQ=\"", VIEW_BASE64), "\"hello world\"");
+  ASSERT_STREQ(shown("\"aGVsbG8gd29ybGQ\"", VIEW_BASE64), "\"hello world\"");
+  ASSERT_STREQ(shown("\"YT4/fn5+\"", VIEW_BASE64), "\"a>?~~~\"");
+  ASSERT_STREQ(shown("\"YT4_fn5-\"", VIEW_BASE64), "\"a>?~~~\"");
+  ASSERT_STREQ(shown("\"bGluZQpicmVhaw==\"", VIEW_BASE64), "\"line\\nbreak\"");
+  ASSERT_STREQ(shown("\"w6h0w6A=\"", VIEW_BASE64), "\"\xc3\xa8t\xc3\xa0\"");
+  ASSERT_STREQ(shown("\"3q2+7wABAgMEBQYHCAkKCw==\"", VIEW_BASE64), "de ad be ef 00 01 02 03 04 05 06 07 08 09 0a 0b");
+  ASSERT_STREQ(shown("\"3q2+7w==\"", VIEW_BASE64), "-");
+  ASSERT_STREQ(shown("\"test\"", VIEW_BASE64), "-");
+  ASSERT_STREQ(shown("\"YT4/fn5-\"", VIEW_BASE64), "-");
+  ASSERT_STREQ(shown("\"aGVsbG8=x\"", VIEW_BASE64), "-");
+  ASSERT_STREQ(shown("\"aGVsbG8\"", VIEW_BASE64), "\"hello\"");
+  ASSERT_STREQ(shown("\"aGVsbG9\"", VIEW_BASE64), "-");
+  ASSERT_STREQ(shown("\"aGVsbG\"", VIEW_BASE64), "-");
+  ASSERT_STREQ(shown("\"aGVsbA=\"", VIEW_BASE64), "-");
+  ASSERT_STREQ(shown("\"hello world!\"", VIEW_BASE64), "-");
+  ASSERT_STREQ(shown("\"\"", VIEW_BASE64), "-");
+  ASSERT_STREQ(shown("42", VIEW_BASE64), "-");
+}
+
 static void test_offered(void) {
   ASSERT_STREQ(offered("42"), "default hex oct bin exp iec si dur utc local date ago");
   ASSERT_STREQ(offered("1.5"), "default exp dur");
   ASSERT_STREQ(offered("0"), "default hex oct bin iec si dur utc local date ago");
   ASSERT_STREQ(offered("\"hello\""), "default");
   ASSERT_STREQ(offered("\"2024-10-30\""), "default utc local date ago");
+  ASSERT_STREQ(offered("\"aGVsbG8gd29ybGQ=\""), "default b64");
   ASSERT_STREQ(offered("null"), "default");
   ASSERT_STREQ(offered("[1]"), "default");
 }
@@ -241,6 +264,7 @@ static void test_names(void) {
   f(test_units)                \
   f(test_iso_strings)          \
   f(test_rfc2822_strings)      \
+  f(test_base64)               \
   f(test_offered)              \
   f(test_names)
 
