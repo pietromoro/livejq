@@ -45,7 +45,7 @@ static void test_file_only(void) {
   CHECK(o.app.query == NULL);
   CHECK(!o.app.slurp && !o.app.raw);
   ASSERT_EQ(o.app.watch_ms, 0);
-  CHECK(o.query_folder == NULL);
+  CHECK(o.app.query_folder == NULL);
   ASSERT_EQ(jv_object_length(jv_copy(o.app.args)), 0);
   jv_free(o.app.args);
 }
@@ -104,7 +104,7 @@ static void test_input_modes(void) {
 
   ASSERT_EQ(parse(&o, "--slurp", "--raw-input", "--query-folder", "q", "a.json", NULL), CLI_RUN);
   CHECK(o.app.slurp && o.app.raw);
-  CHECK(strcmp(o.query_folder, "q") == 0);
+  CHECK(strcmp(o.app.query_folder, "q") == 0);
   jv_free(o.app.args);
 }
 
@@ -178,7 +178,7 @@ static void test_short_forms(void) {
   );
   CHECK(o.app.slurp && o.app.raw);
   CHECK(strcmp(o.app.query, ".a") == 0);
-  CHECK(strcmp(o.query_folder, "q") == 0);
+  CHECK(strcmp(o.app.query_folder, "q") == 0);
   ASSERT_EQ(o.app.watch_ms, 500);
   CHECK(strcmp(o.app.path, "a.json") == 0);
   jv_free(o.app.args);

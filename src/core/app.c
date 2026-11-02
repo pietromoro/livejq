@@ -10,12 +10,15 @@
 #include "help.h"
 #include "highlight.h"
 #include "loader.h"
+#include "sidebar.h"
+#include "store.h"
 #include "tree.h"
 #include "views.h"
 
 #define DEBOUNCE_MS 150
 #define DEFAULT_CAP 10000
 #define WHEEL_ROWS  3
+#define SCAN_MS     1000 /* between looks at the query folder when not watching */
 #define QUERY_ROWS  3 /* the query's box */
 #define TREE_Y      4
 #define TREE_X      2
@@ -43,7 +46,11 @@ struct app {
   b8 help;         /* the overlay is shown */
   help_view help_at;
   b8 quit;
-  i32 h;           /* rows of the last render */
+  i32 w;           /* columns of the last render */
+  i32 h;           /* and rows */
+
+  sidebar side;
+  i64 scan_at;       /* next look at the query folder */
 
   editor query;
   b8 edited;      /* not submitted yet */
@@ -60,7 +67,9 @@ struct app {
 };
 
 static void key(app* a, app_event ev);
+static app_focus next_focus(const app* a, i32 step);
 static void tree_key(app* a, u32 key);
+static b8 rescan(app* a, i64 now);
 static b8 mouse(app* a, app_event ev);
 static b8 poll(app* a, i64 now);
 static void reload(app* a);
@@ -80,13 +89,24 @@ app* app_new(const app_opts* opts, char* err, usz errlen) {
   file_stamp stamp;
   app* a;
 
+  store* saved = NULL;
+
+  if (opts->query_folder && !(saved = store_open(opts->query_folder, err, errlen))) {
+    jv_free(opts->args);
+    return NULL;
+  }
+
   if (!load_file(opts->path, opts->raw, opts->slurp, &loaded, &stamp, err, errlen)) {
+    store_free(saved);
     jv_free(opts->args);
     return NULL;
   }
 
   a = calloc(1, sizeof(*a));
   if (!a) abort();
+
+  a->side.store = saved;
+  a->side.shown = saved != NULL;
 
   const char* slash = strrchr(opts->path, '/');
 #ifdef _WIN32
@@ -127,6 +147,7 @@ void app_free(app* a) {
   jv_free(a->error);
   jv_free(a->load_error);
   editor_free(&a->query);
+  store_free(a->side.store);
   free(a);
 }
 
@@ -144,6 +165,7 @@ b8 app_feed(app* a, app_event ev) {
     case EV_TICK:
       if (a->edited && ev.now_ms >= a->submit_at) submit(a);
       changed = a->watch_ms && poll(a, ev.now_ms);
+      changed = rescan(a, ev.now_ms) || changed;
       break;
     case EV_FILE_CHANGED:
       reload(a);
@@ -165,16 +187,26 @@ b8 app_settle(app* a, i64 timeout_ms) {
 /* the query in a box, the tree under it, a status bar and a line of keys. */
 void app_render(app* a, grid* g) {
   i32 n = jv_array_length(jv_copy(a->outputs));
+  i32 left = sidebar_width(&a->side, g->w) + TREE_X;
 
+  a->w = g->w;
   a->h = g->h;
   grid_clear(g);
   render_query(a, g);
+  sidebar_render(
+    &a->side,
+    g,
+    TREE_Y - 1,
+    g->h - TREE_Y - 1,
+    NULL,
+    a->focus == FOCUS_SIDEBAR
+  );
   if (a->has_result && n == 0 && jv_get_kind(a->error) == JV_KIND_NULL)
-    grid_put_fit(g, TREE_X, TREE_Y, g->w - 1, "(no output)", 11, STYLE_EMPTY);
+    grid_put_fit(g, left, TREE_Y, g->w - 1, "(no output)", 11, STYLE_EMPTY);
 
   tree_render(
     a->tree, g,
-    TREE_X,
+    left,
     TREE_Y,
     g->w - 1,
     g->h - TREE_Y - 2,
@@ -205,19 +237,31 @@ static void key(app* a, app_event ev) {
     return;
   }
 
-  if (ev.key == APP_KEY_F1 || (ev.key == '?' && a->focus == FOCUS_TREE)) {
+  if (ev.key == CTRL('b') && a->side.store) {
+    a->side.shown = !a->side.shown;
+    if (!a->side.shown && a->focus == FOCUS_SIDEBAR) a->focus = FOCUS_TREE;
+
+    return;
+  }
+
+  if (ev.key == APP_KEY_F1 || (ev.key == '?' && a->focus != FOCUS_QUERY)) {
     a->help = 1;
     a->help_at.top = 0;
     return;
   }
 
   if (ev.key == '\t' || ev.key == APP_KEY_BACKTAB) {
-    a->focus = a->focus == FOCUS_QUERY ? FOCUS_TREE : FOCUS_QUERY;
+    a->focus = next_focus(a, ev.key == '\t' ? 1 : -1);
     return;
   }
 
-  if (ev.key == 'q' && a->focus == FOCUS_TREE) {
+  if (ev.key == 'q' && a->focus != FOCUS_QUERY) {
     a->quit = 1;
+    return;
+  }
+
+  if (a->focus == FOCUS_SIDEBAR) {
+    sidebar_key(&a->side, ev.key);
     return;
   }
 
@@ -230,6 +274,13 @@ static void key(app* a, app_event ev) {
 
   a->edited = 1;
   a->submit_at = ev.now_ms + DEBOUNCE_MS;
+}
+
+/* the zones in order query, tree, sidebar, skipping a hidden sidebar. */
+static app_focus next_focus(const app* a, i32 step) {
+  i32 n = a->side.shown ? 3 : 2;
+
+  return (app_focus)(((i32)a->focus + step + n) % n);
 }
 
 static void tree_key(app* a, u32 key) {
@@ -321,12 +372,14 @@ static void tree_key(app* a, u32 key) {
   }
 }
 
-/* a press focuses the zone under it and picks the tree line there, or
- * closes the help; the wheel scrolls the help, or the tree under it
- * without focusing it. true when the screen changed. */
+/* a press focuses the zone under it and picks the tree line or the saved
+ * query there, or closes the help; the wheel scrolls the help, or the tree
+ * under it without focusing it. true when the screen changed. */
 static b8 mouse(app* a, app_event ev) {
   app_focus was = a->focus;
-  b8 in_tree = ev.y >= TREE_Y && ev.y < a->h - 2;
+  i32 side_w = sidebar_width(&a->side, a->w);
+  b8 in_side = ev.x < side_w && ev.y >= TREE_Y - 1 && ev.y < a->h - 2;
+  b8 in_tree = !in_side && ev.y >= TREE_Y && ev.y < a->h - 2;
 
   if (ev.mouse != APP_MOUSE_PRESS && a->help)
     return help_scroll(&a->help_at, ev.mouse == APP_MOUSE_WHEEL_UP ? -WHEEL_ROWS : WHEEL_ROWS);
@@ -343,15 +396,40 @@ static b8 mouse(app* a, app_event ev) {
   }
 
   if (ev.y < QUERY_ROWS) a->focus = FOCUS_QUERY;
+  if (in_side) {
+    a->focus = FOCUS_SIDEBAR;
+    return sidebar_click(&a->side, ev.y - TREE_Y) || a->focus != was;
+  }
+
   if (!in_tree) return a->focus != was;
 
   a->focus = FOCUS_TREE;
   return tree_click(
     a->tree,
-    ev.x - TREE_X,
+    ev.x - side_w - TREE_X,
     ev.y - TREE_Y,
     was == FOCUS_TREE
   ) || a->focus != was;
+}
+
+/* looks at the query folder once a watch interval, or a second. true when
+ * the list changed. */
+static b8 rescan(app* a, i64 now) {
+  if (!a->side.store || now < a->scan_at) return 0;
+
+  a->scan_at = now + (a->watch_ms ? a->watch_ms : SCAN_MS);
+
+  const char* name = sidebar_selected(&a->side);
+  char* selected = name ? strdup(name) : NULL;
+
+  if (!store_rescan(a->side.store)) {
+    free(selected);
+    return 0;
+  }
+
+  sidebar_select(&a->side, selected);
+  free(selected);
+  return 1;
 }
 
 /* true when the file changed, went missing or came back. */

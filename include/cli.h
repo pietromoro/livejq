@@ -14,7 +14,6 @@ typedef enum {
 
 typedef struct {
   app_opts app;
-  const char* query_folder; /* NULL without a sidebar */
 } cli_opts;
 
 /* The text --help prints. */

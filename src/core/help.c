@@ -48,6 +48,16 @@ static const entry tree_keys[] = {
     { "q  ctrl-c", "quit" },
 };
 
+static const entry sidebar_keys[] = {
+    { "j k  \xe2\x86\x93 \xe2\x86\x91", "move" },
+    { "g G  home end", "top / bottom" },
+    { "pgup pgdn", "page" },
+    { "ctrl-b", "hide / show" },
+    { "tab", "query" },
+    { "? F1", "help" },
+    { "q  ctrl-c", "quit" },
+};
+
 static const entry query_bar[] = {
     { "\xe2\x86\x90\xe2\x86\x92", "move" },
     { "ctrl-w", "delete word" },
@@ -65,14 +75,35 @@ static const entry tree_bar[] = {
     { "q", "quit" },
 };
 
+static const entry sidebar_bar[] = {
+    { "\xe2\x86\x91\xe2\x86\x93", "move" },
+    { "ctrl-b", "hide" },
+    { "tab", "query" },
+    { "?", "help" },
+    { "q", "quit" },
+};
+
+/* by app_focus. */
+static const struct {
+  const entry* keys;
+  i32 n;
+  const char* title;
+  const entry* bar;
+  usz bar_n;
+} zones[] = {
+    { query_keys, ARRAY_LEN(query_keys), " query keys ", query_bar, ARRAY_LEN(query_bar) },
+    { tree_keys, ARRAY_LEN(tree_keys), " tree keys ", tree_bar, ARRAY_LEN(tree_bar) },
+    { sidebar_keys, ARRAY_LEN(sidebar_keys), " saved query keys ", sidebar_bar, ARRAY_LEN(sidebar_bar) },
+};
+
 static void scrollbar(grid* g, i32 x, i32 y, const help_view* v, i32 n);
 static i32 key_rows(const help_view* v, u32 key);
 static i32 columns(const char* s);
 
 void help_render(grid* g, app_focus focus, help_view* v) {
-  const entry* keys = focus == FOCUS_TREE ? tree_keys : query_keys;
-  i32 n = focus == FOCUS_TREE ? (i32)ARRAY_LEN(tree_keys) : (i32)ARRAY_LEN(query_keys);
-  const char* title = focus == FOCUS_TREE ? " tree keys " : " query keys ";
+  const entry* keys = zones[focus].keys;
+  i32 n = zones[focus].n;
+  const char* title = zones[focus].title;
   i32 key_w = 0;
   i32 what_w = columns(SCROLL);
   i32 w;
@@ -139,8 +170,8 @@ b8 help_scroll(help_view* v, i32 n) {
 }
 
 void help_bar(grid* g, i32 y, app_focus focus) {
-  const entry* keys = focus == FOCUS_TREE ? tree_bar : query_bar;
-  usz n = focus == FOCUS_TREE ? ARRAY_LEN(tree_bar) : ARRAY_LEN(query_bar);
+  const entry* keys = zones[focus].bar;
+  usz n = zones[focus].bar_n;
   i32 x = 1;
 
   for (usz i = 0; i < n; i++) {

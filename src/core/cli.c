@@ -101,7 +101,7 @@ static b8 option(i32 argc, char** argv, i32* i, cli_opts* opts, char* err, usz e
 
   if (is(s, "--query", "-q")) return (opts->app.query = value(argc, argv, i, err, errlen)) != NULL;
   if (is(s, "--query-folder", "-d"))
-    return (opts->query_folder = value(argc, argv, i, err, errlen)) != NULL;
+    return (opts->app.query_folder = value(argc, argv, i, err, errlen)) != NULL;
   if (is(s, "--watch", "-w")) return watch(argc, argv, i, opts, err, errlen);
   if (
     strcmp(s, "--arg") == 0

@@ -43,6 +43,7 @@ typedef enum {
 typedef enum {
   FOCUS_QUERY = 0,
   FOCUS_TREE,
+  FOCUS_SIDEBAR,
 } app_focus;
 
 typedef struct {
@@ -60,14 +61,16 @@ typedef struct {
   const char* query; /* default "." */
   b8 raw;
   b8 slurp;
-  jv args;      /* object of $name bindings, owned by the app */
-  usz cap;      /* default 10000 */
-  i64 watch_ms; /* 0 when not watching */
+  jv args;                  /* object of $name bindings, owned by the app */
+  usz cap;                  /* default 10000 */
+  i64 watch_ms;             /* 0 when not watching */
+  const char* query_folder; /* NULL without a sidebar */
 } app_opts;
 
 typedef struct app app;
 
-/* NULL when the file cannot be read, with the reason in err. */
+/* NULL when the file or the query folder cannot be read, with the reason in
+ * err. */
 app* app_new(const app_opts* opts, char* err, usz errlen);
 void app_free(app* a);
 /* True when the screen changed and needs app_render again. */
@@ -77,7 +80,7 @@ b8 app_feed(app* a, app_event ev);
 b8 app_settle(app* a, i64 timeout_ms);
 void app_render(app* a, grid* g);
 app_focus app_focused(const app* a);
-/* True after a quit key: Ctrl-C anywhere, q in the tree. */
+/* True after a quit key: Ctrl-C anywhere, q in the tree or the sidebar. */
 b8 app_quitting(const app* a);
 
 #endif /* LIVEJQ_APP_H */
