@@ -80,6 +80,7 @@ static void tree_key(app* a, u32 key);
 static void sidebar_enter(app* a);
 static void save(app* a);
 static void start_naming(app* a, const char* name);
+static void new_query(app* a);
 static b8 write_as(app* a, const char* name);
 static void name_key(app* a, u32 key);
 static void save_as(app* a);
@@ -289,6 +290,11 @@ static void key(app* a, app_event ev) {
 
   if (ev.key == APP_KEY_ALT_S && a->side.store) {
     start_naming(a, a->loaded ? a->loaded : "");
+    return;
+  }
+
+  if (ev.key == CTRL('n') && a->side.store) {
+    new_query(a);
     return;
   }
 
@@ -508,6 +514,15 @@ static void start_naming(app* a, const char* name) {
   a->focus = FOCUS_SIDEBAR;
   editor_set(&a->side.name, name);
   store_failed(a, NULL);
+}
+
+/* drops the loaded query and starts over from . in the box. */
+static void new_query(app* a) {
+  editor_set(&a->query, ".");
+  set_loaded(a, NULL, NULL);
+  store_failed(a, NULL);
+  a->focus = FOCUS_QUERY;
+  submit(a);
 }
 
 /* saves the box under name and loads it from there. false on a write

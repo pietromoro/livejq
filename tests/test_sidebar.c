@@ -54,6 +54,7 @@ static void test_save_new(void);
 static void test_save_refused(void);
 static void test_save_cancelled(void);
 static void test_save_as(void);
+static void test_new_query(void);
 static void test_delete(void);
 static void test_delete_cancelled(void);
 
@@ -676,6 +677,34 @@ static void test_save_as(void) {
   remove_folder(dir);
 }
 
+static void test_new_query(void) {
+  char* dir = make_folder();
+
+  put(dir, "a.query", ".a");
+
+  app* a = open_in(dir, 1, 0);
+  if (!a) return;
+
+  press(a, APP_KEY_BACKTAB);
+  press(a, APP_KEY_ENTER);
+  press(a, CTRL('n'));
+  CHECK(app_settle(a, SETTLE_MS));
+  ASSERT_STREQ(cells(a, QUERY_X, 1, W - 1), ".");
+  ASSERT_STREQ(cells(a, 1, 0, 6), "\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80");
+  ASSERT_STREQ(cells(a, SIDE_W + 4, TOP, W), "{2}");
+  ASSERT_EQ(app_focused(a), FOCUS_QUERY);
+
+  type(a, "b");
+  press(a, CTRL('s'));
+  type(a, "b");
+  press(a, APP_KEY_ENTER);
+  ASSERT_STREQ(read_back(dir, "b.query"), ".b\n");
+  ASSERT_STREQ(read_back(dir, "a.query"), ".a");
+
+  app_free(a);
+  remove_folder(dir);
+}
+
 static void test_delete(void) {
   char* dir = make_folder();
 
@@ -759,6 +788,7 @@ static void test_delete_cancelled(void) {
    f(test_save_refused)             \
    f(test_save_cancelled)           \
    f(test_save_as)                  \
+   f(test_new_query)                \
    f(test_delete)                   \
    f(test_delete_cancelled)
 

@@ -55,6 +55,7 @@ static const entry sidebar_keys[] = {
     { "enter", "load into the query" },
     { "ctrl-s", "save the query over the loaded one" },
     { "alt-s", "save the query under another name" },
+    { "ctrl-n", "new query, nothing loaded" },
     { "d", "delete, y confirms" },
     { "ctrl-b", "hide / show" },
     { "tab", NULL },
