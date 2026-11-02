@@ -40,6 +40,7 @@ static void test_empty_hint(void);
 static void test_width(void);
 static void test_toggle_and_focus(void);
 static void test_navigation(void);
+static void test_tab_in_help(void);
 static void test_click(void);
 static void test_follows_folder(void);
 static void test_load(void);
@@ -334,6 +335,23 @@ static void test_navigation(void) {
   remove_folder(dir);
 }
 
+static void test_tab_in_help(void) {
+  char* dir = make_folder();
+  app* a = open_in(dir, 1, 0);
+
+  if (!a) return;
+
+  press(a, '\t');
+  CHECK(strstr(cells(a, 0, H - 1, W), "tab saved queries") != NULL);
+  press(a, CTRL('b'));
+  CHECK(strstr(cells(a, 0, H - 1, W), "tab query") != NULL);
+  press(a, APP_KEY_BACKTAB);
+  CHECK(strstr(cells(a, 0, H - 1, W), "tab tree") != NULL);
+
+  app_free(a);
+  remove_folder(dir);
+}
+
 static void test_click(void) {
   char* dir = make_folder();
 
@@ -477,6 +495,7 @@ static void test_follows_loaded_file(void) {
    f(test_width)                    \
    f(test_toggle_and_focus)         \
    f(test_navigation)               \
+   f(test_tab_in_help)              \
    f(test_click)                    \
    f(test_follows_folder)           \
    f(test_load)                     \

@@ -228,10 +228,10 @@ void app_render(app* a, grid* g) {
   );
 
   render_status(a, g);
-  help_bar(g, g->h - 1, a->focus);
+  help_bar(g, g->h - 1, a->focus, next_focus(a, 1));
   if (!a->help) return;
 
-  help_render(g, a->focus, &a->help_at);
+  help_render(g, a->focus, next_focus(a, 1), &a->help_at);
   g->cursor_x = -1;
 }
 

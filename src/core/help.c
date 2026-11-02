@@ -12,7 +12,7 @@
 
 typedef struct {
   const char* keys;
-  const char* what;
+  const char* what; /* NULL for the zone tab moves to */
 } entry;
 
 static const entry query_keys[] = {
@@ -22,7 +22,7 @@ static const entry query_keys[] = {
     { "backspace delete", "delete" },
     { "ctrl-w  alt-backspace", "delete word" },
     { "ctrl-u  ctrl-k", "delete to start / end" },
-    { "tab", "tree" },
+    { "tab", NULL },
     { "F1", "help" },
     { "ctrl-c", "quit" },
 };
@@ -43,7 +43,7 @@ static const entry tree_keys[] = {
     { "u", "time or duration in s / ms / \xc2\xb5s / ns, then back" },
     { "0", "value as jq prints it" },
     { "a", "this view on every sibling with the same key" },
-    { "tab", "query" },
+    { "tab", NULL },
     { "? F1", "help" },
     { "q  ctrl-c", "quit" },
 };
@@ -54,7 +54,7 @@ static const entry sidebar_keys[] = {
     { "pgup pgdn", "page" },
     { "enter", "load into the query" },
     { "ctrl-b", "hide / show" },
-    { "tab", "query" },
+    { "tab", NULL },
     { "? F1", "help" },
     { "q  ctrl-c", "quit" },
 };
@@ -62,7 +62,7 @@ static const entry sidebar_keys[] = {
 static const entry query_bar[] = {
     { "\xe2\x86\x90\xe2\x86\x92", "move" },
     { "ctrl-w", "delete word" },
-    { "tab", "tree" },
+    { "tab", NULL },
     { "F1", "help" },
     { "ctrl-c", "quit" },
 };
@@ -71,7 +71,7 @@ static const entry tree_bar[] = {
     { "\xe2\x86\x91\xe2\x86\x93", "move" },
     { "\xe2\x86\x90\xe2\x86\x92", "fold" },
     { "space", "toggle" },
-    { "tab", "query" },
+    { "tab", NULL },
     { "?", "help" },
     { "q", "quit" },
 };
@@ -80,7 +80,7 @@ static const entry sidebar_bar[] = {
     { "\xe2\x86\x91\xe2\x86\x93", "move" },
     { "enter", "load" },
     { "ctrl-b", "hide" },
-    { "tab", "query" },
+    { "tab", NULL },
     { "?", "help" },
     { "q", "quit" },
 };
@@ -98,11 +98,15 @@ static const struct {
     { sidebar_keys, ARRAY_LEN(sidebar_keys), " saved query keys ", sidebar_bar, ARRAY_LEN(sidebar_bar) },
 };
 
+/* by app_focus. */
+static const char* const zone_names[] = { "query", "tree", "saved queries" };
+
+static const char* what_of(const entry* e, app_focus next);
 static void scrollbar(grid* g, i32 x, i32 y, const help_view* v, i32 n);
 static i32 key_rows(const help_view* v, u32 key);
 static i32 columns(const char* s);
 
-void help_render(grid* g, app_focus focus, help_view* v) {
+void help_render(grid* g, app_focus focus, app_focus next, help_view* v) {
   const entry* keys = zones[focus].keys;
   i32 n = zones[focus].n;
   const char* title = zones[focus].title;
@@ -115,7 +119,7 @@ void help_render(grid* g, app_focus focus, help_view* v) {
 
   for (i32 i = 0; i < n; i++) {
     if (columns(keys[i].keys) > key_w) key_w = columns(keys[i].keys);
-    if (columns(keys[i].what) > what_w) what_w = columns(keys[i].what);
+    if (columns(what_of(&keys[i], next)) > what_w) what_w = columns(what_of(&keys[i], next));
   }
 
   w = key_w + what_w + 7;
@@ -139,7 +143,9 @@ void help_render(grid* g, app_focus focus, help_view* v) {
 
     grid_put_fit(g, at, y + 1 + i, x + w - 1, e->keys, strlen(e->keys), STYLE_ACCENT);
     at += key_w + 3;
-    grid_put_fit(g, at, y + 1 + i, x + w - 1, e->what, strlen(e->what), STYLE_NORMAL);
+
+    const char* what = what_of(e, next);
+    grid_put_fit(g, at, y + 1 + i, x + w - 1, what, strlen(what), STYLE_NORMAL);
   }
 
   if (v->max) scrollbar(g, x + w - 1, y + 1, v, n);
@@ -171,7 +177,7 @@ b8 help_scroll(help_view* v, i32 n) {
   return 1;
 }
 
-void help_bar(grid* g, i32 y, app_focus focus) {
+void help_bar(grid* g, i32 y, app_focus focus, app_focus next) {
   const entry* keys = zones[focus].bar;
   usz n = zones[focus].bar_n;
   i32 x = 1;
@@ -179,12 +185,17 @@ void help_bar(grid* g, i32 y, app_focus focus) {
   for (usz i = 0; i < n; i++) {
     i32 sep = i ? columns(SEP) : 0;
 
-    if (x + sep + columns(keys[i].keys) + 1 + columns(keys[i].what) >= g->w) return;
+    const char* what = what_of(&keys[i], next);
+    if (x + sep + columns(keys[i].keys) + 1 + columns(what) >= g->w) return;
 
     if (i) x = grid_puts(g, x, y, SEP, STYLE_HELP_SEP);
     x = grid_puts(g, x, y, keys[i].keys, STYLE_HELP_KEY);
-    x = grid_puts(g, x + 1, y, keys[i].what, STYLE_HELP);
+    x = grid_puts(g, x + 1, y, what, STYLE_HELP);
   }
+}
+
+static const char* what_of(const entry* e, app_focus next) {
+  return e->what ? e->what : zone_names[next];
 }
 
 /* arrows at the ends of the v->page rows of border from x,y, and between
