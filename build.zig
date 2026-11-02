@@ -53,7 +53,7 @@ pub fn build(b: *std.Build) void {
   b.installArtifact(exe);
 
   const run = b.addRunArtifact(exe);
-  if (b.args) |args| run.addArgs(args);
+  run.addPassthruArgs();
   b.step("run", "Build and run livejq").dependOn(&run.step);
 
   const test_step = b.step("test", "Build and run the tests");
@@ -81,7 +81,8 @@ pub fn build(b: *std.Build) void {
 
 fn cSources(b: *std.Build, dir: []const u8) []const []const u8 {
   const io = b.graph.io;
-  var d = b.build_root.handle.openDir(io, dir, .{ .iterate = true }) catch |err|
+  b.dependOnDirectoryContents(b.path(dir));
+  var d = b.root.openDir(io, dir, .{ .iterate = true }) catch |err|
     std.debug.panic("cannot open {s}: {t}", .{ dir, err });
   defer d.close(io);
 
@@ -107,9 +108,11 @@ fn ensureSubmodules(b: *std.Build) void {
     "vendor/PDCursesMod/curses.h",
   };
   for (markers) |m| {
-    b.build_root.handle.access(io, m, .{}) catch {
+    b.dependOnFileMetadata(b.path(m));
+    _ = b.root.statFile(io, m) catch {
       std.log.info("fetching vendored submodules", .{});
-      _ = b.run(&.{ "git", "-C", b.pathFromRoot("."), "submodule", "update", "--init", "--recursive" });
+      b.graph.poisonCache();
+      _ = b.run(&.{ "git", "-C", b.root.joinString(b.allocator, ".") catch @panic("OOM"), "submodule", "update", "--init", "--recursive" });
       return;
     };
   }

@@ -5,7 +5,7 @@ A terminal UI to jq a JSON file and see the result live.
 
 ## Build
 
-Needs only [Zig](https://ziglang.org) 0.16.0. jq, oniguruma and PDCursesMod are git submodules
+Needs only [Zig](https://ziglang.org) 0.17.0. jq, oniguruma and PDCursesMod are git submodules
 under `vendor/`, fetched on the first build if missing, and compiled from source.
 
 ```text

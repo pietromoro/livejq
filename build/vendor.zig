@@ -171,7 +171,9 @@ fn cancellableExecute(b: *std.Build) []const u8 {
 // the build fails on a missing or repeated anchor, so a submodule bump that
 // moves the code cannot drop a patch silently.
 fn spliced(b: *std.Build, path: []const u8, splices: []const Splice) []const u8 {
-  var src: []const u8 = b.build_root.handle.readFileAlloc(b.graph.io, path, b.allocator, .unlimited) catch |err|
+  b.dependOnFileContents(b.path(path));
+  const file = b.root.join(b.allocator, path) catch @panic("OOM");
+  var src: []const u8 = file.root_dir.handle.readFileAlloc(b.graph.io, file.sub_path, b.allocator, .unlimited) catch |err|
     std.debug.panic("cannot read {s}: {t}", .{ path, err });
 
   for (splices) |s| {
