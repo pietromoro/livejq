@@ -52,6 +52,7 @@ static const entry sidebar_keys[] = {
     { "j k  \xe2\x86\x93 \xe2\x86\x91", "move" },
     { "g G  home end", "top / bottom" },
     { "pgup pgdn", "page" },
+    { "enter", "load into the query" },
     { "ctrl-b", "hide / show" },
     { "tab", "query" },
     { "? F1", "help" },
@@ -77,6 +78,7 @@ static const entry tree_bar[] = {
 
 static const entry sidebar_bar[] = {
     { "\xe2\x86\x91\xe2\x86\x93", "move" },
+    { "enter", "load" },
     { "ctrl-b", "hide" },
     { "tab", "query" },
     { "?", "help" },

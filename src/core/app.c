@@ -25,6 +25,7 @@
 #define PROMPT      "\xe2\x9d\xaf "
 #define PLACEHOLDER "a jq filter"
 #define WATCHING    "\xe2\x9f\xb3 "
+#define MODIFIED    "\xe2\x97\x8f"
 #define MIN_PATH    16 /* columns the path keeps before the times go, an error keeps all */
 #define CTRL(c)     ((c) & 0x1f)
 
@@ -51,6 +52,9 @@ struct app {
 
   sidebar side;
   i64 scan_at;       /* next look at the query folder */
+  char* loaded;      /* the saved query in the box, NULL for none */
+  char* loaded_text; /* its text as last read */
+  file_stamp loaded_stamp;
 
   editor query;
   b8 edited;      /* not submitted yet */
@@ -63,13 +67,18 @@ struct app {
   jv outputs;
   jv error;
   jv load_error;
+  jv store_error;
   i64 elapsed_us;
 };
 
 static void key(app* a, app_event ev);
 static app_focus next_focus(const app* a, i32 step);
 static void tree_key(app* a, u32 key);
+static void sidebar_enter(app* a);
 static b8 rescan(app* a, i64 now);
+static b8 modified(const app* a);
+static void set_loaded(app* a, const char* name, char* text);
+static void store_failed(app* a, const char* err);
 static b8 mouse(app* a, app_event ev);
 static b8 poll(app* a, i64 now);
 static void reload(app* a);
@@ -122,6 +131,7 @@ app* app_new(const app_opts* opts, char* err, usz errlen) {
   a->outputs = jv_array();
   a->error = jv_null();
   a->load_error = loaded.error;
+  a->store_error = jv_null();
   a->ev = eval_new();
   if (!a->ev) abort();
 
@@ -146,8 +156,11 @@ void app_free(app* a) {
   jv_free(a->outputs);
   jv_free(a->error);
   jv_free(a->load_error);
+  jv_free(a->store_error);
   editor_free(&a->query);
   store_free(a->side.store);
+  free(a->loaded);
+  free(a->loaded_text);
   free(a);
 }
 
@@ -198,7 +211,7 @@ void app_render(app* a, grid* g) {
     g,
     TREE_Y - 1,
     g->h - TREE_Y - 1,
-    NULL,
+    a->loaded,
     a->focus == FOCUS_SIDEBAR
   );
   if (a->has_result && n == 0 && jv_get_kind(a->error) == JV_KIND_NULL)
@@ -261,7 +274,9 @@ static void key(app* a, app_event ev) {
   }
 
   if (a->focus == FOCUS_SIDEBAR) {
-    sidebar_key(&a->side, ev.key);
+    if (ev.key == APP_KEY_ENTER) sidebar_enter(a);
+    else sidebar_key(&a->side, ev.key);
+
     return;
   }
 
@@ -412,8 +427,29 @@ static b8 mouse(app* a, app_event ev) {
   ) || a->focus != was;
 }
 
-/* looks at the query folder once a watch interval, or a second. true when
- * the list changed. */
+/* loads the selected saved query into the box and runs it. */
+static void sidebar_enter(app* a) {
+  const char* name = sidebar_selected(&a->side);
+
+  if (!name) return;
+
+  char err[256];
+  char* text = store_read(a->side.store, name, err, sizeof(err));
+
+  if (!text) {
+    store_failed(a, err);
+    return;
+  }
+
+  store_failed(a, NULL);
+  editor_set(&a->query, text);
+  set_loaded(a, name, text);
+  submit(a);
+}
+
+/* looks at the query folder once a watch interval, or a second: the list
+ * follows it, and the box follows the loaded query's file unless edited.
+ * true when something shown changed. */
 static b8 rescan(app* a, i64 now) {
   if (!a->side.store || now < a->scan_at) return 0;
 
@@ -429,7 +465,55 @@ static b8 rescan(app* a, i64 now) {
 
   sidebar_select(&a->side, selected);
   free(selected);
+  if (!a->loaded) return 1;
+
+  i32 i = store_find(a->side.store, a->loaded);
+
+  if (i < 0) {
+    set_loaded(a, NULL, NULL);
+    return 1;
+  }
+
+  file_stamp st = store_stamp(a->side.store, (usz)i);
+
+  if (st.mtime_ns == a->loaded_stamp.mtime_ns && st.size == a->loaded_stamp.size) return 1;
+
+  char err[256];
+  char* text = store_read(a->side.store, a->loaded, err, sizeof(err));
+
+  if (!text) return 1;
+
+  if (!modified(a)) {
+    editor_set(&a->query, text);
+    submit(a);
+  }
+
+  set_loaded(a, a->loaded, text);
   return 1;
+}
+
+static b8 modified(const app* a) {
+  return a->loaded && strcmp(a->query.text ? a->query.text : "", a->loaded_text) != 0;
+}
+
+/* takes text; name may be a->loaded. */
+static void set_loaded(app* a, const char* name, char* text) {
+  char* copy = name ? strdup(name) : NULL;
+
+  free(a->loaded);
+  free(a->loaded_text);
+  a->loaded = copy;
+  a->loaded_text = text;
+  if (!copy) return;
+
+  i32 i = store_find(a->side.store, copy);
+
+  if (i >= 0) a->loaded_stamp = store_stamp(a->side.store, (usz)i);
+}
+
+static void store_failed(app* a, const char* err) {
+  jv_free(a->store_error);
+  a->store_error = err ? jv_string(err) : jv_null();
 }
 
 /* true when the file changed, went missing or came back. */
@@ -557,7 +641,8 @@ static b8 apply(app* a) {
 }
 
 static b8 failed(const app* a) {
-  return jv_get_kind(a->error) == JV_KIND_STRING || jv_get_kind(a->load_error) == JV_KIND_STRING;
+  return jv_get_kind(a->error) == JV_KIND_STRING || jv_get_kind(a->load_error) == JV_KIND_STRING
+    || jv_get_kind(a->store_error) == JV_KIND_STRING;
 }
 
 /* the box takes the accent while the query has focus, and turns red when
@@ -571,6 +656,17 @@ static void render_query(app* a, grid* g) {
   if (!styles) abort();
 
   grid_box(g, 0, 0, g->w, QUERY_ROWS, border);
+  if (a->loaded) {
+    x = grid_put(g, 2, 0, g->w - 2, " ", 1, STYLE_LABEL);
+    x = grid_put(g, x, 0, g->w - 2, a->loaded, strlen(a->loaded), STYLE_LABEL);
+    if (modified(a)) {
+      x = grid_put(g, x, 0, g->w - 2, " ", 1, STYLE_LABEL);
+      x = grid_put(g, x, 0, g->w - 2, MODIFIED, strlen(MODIFIED), STYLE_ACCENT);
+    }
+
+    grid_put(g, x, 0, g->w - 2, " ", 1, STYLE_LABEL);
+  }
+
   x = grid_put(
     g, 2, 1,
     g->w - 2,
@@ -595,6 +691,8 @@ static void render_query(app* a, grid* g) {
 static void render_status(app* a, grid* g) {
   i32 y = g->h - 2;
   jv err = jv_get_kind(a->error) == JV_KIND_STRING ? a->error : a->load_error;
+
+  if (jv_get_kind(err) != JV_KIND_STRING) err = a->store_error;
   i32 name_w;
   i32 end;
   i32 right;

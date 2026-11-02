@@ -17,6 +17,7 @@
 #define TOP       4 /* the first name's row, and the tree's */
 #define BOTTOM    (H - 3)
 #define SIDE_W    20
+#define QUERY_X   4 /* the query's first column, after the prompt */
 #define SETTLE_MS 5000
 #define CTRL(c)   ((c) & 0x1f)
 #define GUTTER    0x2503
@@ -31,6 +32,7 @@ static b8 tick(app* a, i64 now);
 static b8 click(app* a, i32 x, i32 y);
 static const char* cells(app* a, i32 x, i32 y, i32 max_x);
 static i32 gutter_row(app* a, i32 x);
+static void type(app* a, const char* s);
 static void test_absent_without_folder(void);
 static void test_bad_folder(void);
 static void test_lists_names(void);
@@ -40,6 +42,9 @@ static void test_toggle_and_focus(void);
 static void test_navigation(void);
 static void test_click(void);
 static void test_follows_folder(void);
+static void test_load(void);
+static void test_modified_label(void);
+static void test_follows_loaded_file(void);
 
 static grid* screen;
 
@@ -155,6 +160,16 @@ static i32 gutter_row(app* a, i32 x) {
     if (grid_at(screen, x, y).ch == GUTTER) return y;
 
   return -1;
+}
+
+static void type(app* a, const char* s) {
+  app_event ev = { 0 };
+
+  ev.kind = EV_KEY;
+  while (*s) {
+    ev.key = (u8)*s++;
+    app_feed(a, ev);
+  }
 }
 
 static void test_absent_without_folder(void) {
@@ -372,6 +387,88 @@ static void test_follows_folder(void) {
   remove_folder(dir);
 }
 
+static void test_load(void) {
+  char* dir = make_folder();
+
+  put(dir, "a.query", ".a\n");
+  put(dir, "b.query", ".b[]");
+
+  app* a = open_in(dir, 1, 0);
+  if (!a) return;
+
+  press(a, APP_KEY_BACKTAB);
+  press(a, APP_KEY_ENTER);
+  CHECK(app_settle(a, SETTLE_MS));
+  ASSERT_STREQ(cells(a, QUERY_X, 1, W - 1), ".a");
+  ASSERT_STREQ(cells(a, 1, 0, 6), "\xe2\x94\x80 a \xe2\x94\x80");
+  ASSERT_STREQ(cells(a, SIDE_W + 4, TOP, W), "1");
+  ASSERT_EQ(app_focused(a), FOCUS_SIDEBAR);
+
+  press(a, 'j');
+  press(a, APP_KEY_ENTER);
+  CHECK(app_settle(a, SETTLE_MS));
+  ASSERT_STREQ(cells(a, QUERY_X, 1, W - 1), ".b[]");
+  ASSERT_STREQ(cells(a, 1, 0, 6), "\xe2\x94\x80 b \xe2\x94\x80");
+  ASSERT_STREQ(cells(a, SIDE_W + 4, TOP, W), "#0 2");
+
+  app_free(a);
+  remove_folder(dir);
+}
+
+static void test_modified_label(void) {
+  char* dir = make_folder();
+
+  put(dir, "a.query", ".a");
+
+  app* a = open_in(dir, 1, 0);
+  if (!a) return;
+
+  ASSERT_STREQ(cells(a, 1, 0, 6), "\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80");
+  press(a, APP_KEY_BACKTAB);
+  press(a, APP_KEY_ENTER);
+  press(a, '\t');
+  type(a, " ");
+  ASSERT_STREQ(cells(a, 1, 0, 8), "\xe2\x94\x80 a \xe2\x97\x8f \xe2\x94\x80");
+  press(a, APP_KEY_BACKSPACE);
+  ASSERT_STREQ(cells(a, 1, 0, 6), "\xe2\x94\x80 a \xe2\x94\x80");
+
+  app_free(a);
+  remove_folder(dir);
+}
+
+static void test_follows_loaded_file(void) {
+  char* dir = make_folder();
+
+  put(dir, "a.query", ".a");
+
+  app* a = open_in(dir, 1, 0);
+  if (!a) return;
+
+  tick(a, 0);
+  press(a, APP_KEY_BACKTAB);
+  press(a, APP_KEY_ENTER);
+  put(dir, "a.query", ".b[0]");
+  CHECK(tick(a, 1000));
+  CHECK(app_settle(a, SETTLE_MS));
+  ASSERT_STREQ(cells(a, QUERY_X, 1, W - 1), ".b[0]");
+  ASSERT_STREQ(cells(a, SIDE_W + 4, TOP, W), "2");
+
+  press(a, '\t');
+  type(a, " | .");
+  put(dir, "a.query", ".a | tostring");
+  CHECK(tick(a, 2000));
+  ASSERT_STREQ(cells(a, QUERY_X, 1, W - 1), ".b[0] | .");
+  ASSERT_STREQ(cells(a, 1, 0, 8), "\xe2\x94\x80 a \xe2\x97\x8f \xe2\x94\x80");
+
+  remove(in(dir, "a.query"));
+  CHECK(tick(a, 3000));
+  ASSERT_STREQ(cells(a, 1, 0, 6), "\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80");
+  ASSERT_STREQ(cells(a, QUERY_X, 1, W - 1), ".b[0] | .");
+
+  app_free(a);
+  remove_folder(dir);
+}
+
 #define TESTS(f)                    \
    f(test_absent_without_folder)    \
    f(test_bad_folder)               \
@@ -381,7 +478,10 @@ static void test_follows_folder(void) {
    f(test_toggle_and_focus)         \
    f(test_navigation)               \
    f(test_click)                    \
-   f(test_follows_folder)
+   f(test_follows_folder)           \
+   f(test_load)                     \
+   f(test_modified_label)           \
+   f(test_follows_loaded_file)
 
 #define TEST_HELPER_MAIN
 
