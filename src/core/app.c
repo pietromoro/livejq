@@ -75,6 +75,7 @@ static void key(app* a, app_event ev);
 static app_focus next_focus(const app* a, i32 step);
 static void tree_key(app* a, u32 key);
 static void sidebar_enter(app* a);
+static void save(app* a);
 static b8 rescan(app* a, i64 now);
 static b8 modified(const app* a);
 static void set_loaded(app* a, const char* name, char* text);
@@ -253,6 +254,11 @@ static void key(app* a, app_event ev) {
     a->side.shown = !a->side.shown;
     if (!a->side.shown && a->focus == FOCUS_SIDEBAR) a->focus = FOCUS_TREE;
 
+    return;
+  }
+
+  if (ev.key == CTRL('s') && a->side.store) {
+    save(a);
     return;
   }
 
@@ -443,6 +449,24 @@ static void sidebar_enter(app* a) {
   editor_set(&a->query, text);
   set_loaded(a, name, text);
   submit(a);
+}
+
+/* writes the box over the loaded saved query. */
+static void save(app* a) {
+  if (!a->loaded) return;
+
+  const char* text = a->query.text ? a->query.text : "";
+  char err[256];
+  if (!store_write(a->side.store, a->loaded, text, err, sizeof(err))) {
+    store_failed(a, err);
+    return;
+  }
+
+  char* copy = strdup(text);
+  if (!copy) abort();
+
+  store_failed(a, NULL);
+  set_loaded(a, a->loaded, copy);
 }
 
 /* looks at the query folder once a watch interval, or a second: the list

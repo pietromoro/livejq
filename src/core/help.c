@@ -53,6 +53,7 @@ static const entry sidebar_keys[] = {
     { "g G  home end", "top / bottom" },
     { "pgup pgdn", "page" },
     { "enter", "load into the query" },
+    { "ctrl-s", "save the query over the loaded one" },
     { "ctrl-b", "hide / show" },
     { "tab", NULL },
     { "? F1", "help" },

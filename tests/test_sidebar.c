@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "app.h"
@@ -25,6 +26,7 @@
 static char* make_folder(void);
 static void remove_folder(char* dir);
 static const char* in(const char* dir, const char* file);
+static const char* read_back(const char* dir, const char* file);
 static void put(const char* dir, const char* file, const char* text);
 static app* open_in(const char* dir, b8 with_folder, i64 watch_ms);
 static void press(app* a, u32 key);
@@ -46,6 +48,7 @@ static void test_follows_folder(void);
 static void test_load(void);
 static void test_modified_label(void);
 static void test_follows_loaded_file(void);
+static void test_save_overwrites(void);
 
 static grid* screen;
 
@@ -76,6 +79,21 @@ static const char* in(const char* dir, const char* file) {
 
   snprintf(path, sizeof(path), "%s/%s", dir, file);
   return path;
+}
+
+/* the file's bytes, "" when it cannot be read. */
+static const char* read_back(const char* dir, const char* file) {
+  static char buf[256];
+  FILE* f = fopen(in(dir, file), "rb");
+  usz n = 0;
+
+  if (f) {
+    n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+  }
+
+  buf[n] = '\0';
+  return buf;
 }
 
 static void put(const char* dir, const char* file, const char* text) {
@@ -486,6 +504,37 @@ static void test_follows_loaded_file(void) {
   remove_folder(dir);
 }
 
+static void test_save_overwrites(void) {
+  char* dir = make_folder();
+
+  put(dir, "a.query", ".a");
+
+  app* a = open_in(dir, 1, 0);
+  if (!a) return;
+
+  press(a, CTRL('s'));
+  ASSERT_STREQ(read_back(dir, "a.query"), ".a");
+
+  press(a, APP_KEY_BACKTAB);
+  press(a, APP_KEY_ENTER);
+  press(a, '\t');
+  type(a, " | .");
+  press(a, CTRL('s'));
+  ASSERT_STREQ(read_back(dir, "a.query"), ".a | .\n");
+  ASSERT_STREQ(cells(a, 1, 0, 6), "\xe2\x94\x80 a \xe2\x94\x80");
+  CHECK(!tick(a, 0));
+
+  remove(in(dir, "a.query"));
+  mkdir(in(dir, "a.query"), 0700);
+  press(a, APP_KEY_BACKSPACE);
+  press(a, CTRL('s'));
+  ASSERT_STREQ(cells(a, 1, H - 2, 8), "ERROR");
+  ASSERT_STREQ(cells(a, 1, 0, 8), "\xe2\x94\x80 a \xe2\x97\x8f \xe2\x94\x80");
+
+  app_free(a);
+  remove_folder(dir);
+}
+
 #define TESTS(f)                    \
    f(test_absent_without_folder)    \
    f(test_bad_folder)               \
@@ -499,7 +548,8 @@ static void test_follows_loaded_file(void) {
    f(test_follows_folder)           \
    f(test_load)                     \
    f(test_modified_label)           \
-   f(test_follows_loaded_file)
+   f(test_follows_loaded_file)      \
+   f(test_save_overwrites)
 
 #define TEST_HELPER_MAIN
 
