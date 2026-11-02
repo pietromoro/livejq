@@ -12,6 +12,7 @@
 #define TITLE      " saved "
 #define TITLE_NEW  " save as "
 #define PROMPT     "\xe2\x9d\xaf "
+#define ASK        "delete "
 #define HINT       "no saved queries"
 #define HINT_SAVE  "ctrl-s saves one"
 #define MIN_WIDTH  20
@@ -20,6 +21,7 @@
 static void border(grid* g, i32 y, i32 w, const char* end, u8 st);
 static void clamp(sidebar* s);
 static void name_row(sidebar* s, grid* g, i32 y, i32 w);
+static void ask(grid* g, i32 y, i32 w, const char* name, u8 flag);
 
 i32 sidebar_width(const sidebar* s, i32 screen_w) {
   if (!s->store || !s->shown) return 0;
@@ -83,7 +85,8 @@ void sidebar_render(sidebar* s, grid* g, i32 y, i32 h, const char* loaded, b8 fo
       grid_put(g, 1, y + 1 + i, w - 1, GUTTER, strlen(GUTTER), STYLE_GUTTER | flag);
     }
 
-    grid_put_fit(g, 2, y + 1 + i, w - 2, name, strlen(name), name_st | flag);
+    if (flag && s->deleting) ask(g, y + 1 + i, w, name, flag);
+    else grid_put_fit(g, 2, y + 1 + i, w - 2, name, strlen(name), name_st | flag);
   }
 }
 
@@ -158,6 +161,14 @@ static void name_row(sidebar* s, grid* g, i32 y, i32 w) {
 
   g->cursor_x = editor_render(&s->name, g, x, y, w - 2, NULL);
   g->cursor_y = y;
+}
+
+/* "delete name?" in place of the name, the name cut to fit. */
+static void ask(grid* g, i32 y, i32 w, const char* name, u8 flag) {
+  i32 x = grid_put(g, 2, y, w - 2, ASK, strlen(ASK), STYLE_STATUS_ERROR | flag);
+
+  x = grid_put_fit(g, x, y, w - 3, name, strlen(name), STYLE_ACCENT | flag);
+  grid_put(g, x, y, w - 2, "?", 1, STYLE_STATUS_ERROR | flag);
 }
 
 static void clamp(sidebar* s) {

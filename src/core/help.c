@@ -54,6 +54,7 @@ static const entry sidebar_keys[] = {
     { "pgup pgdn", "page" },
     { "enter", "load into the query" },
     { "ctrl-s", "save the query over the loaded one" },
+    { "d", "delete, y confirms" },
     { "ctrl-b", "hide / show" },
     { "tab", NULL },
     { "? F1", "help" },
@@ -90,6 +91,11 @@ static const entry naming_bar[] = {
     { "enter", "save" },
     { "esc", "cancel" },
     { "ctrl-c", "quit" },
+};
+
+static const entry delete_bar[] = {
+    { "y", "delete" },
+    { "other keys", "cancel" },
 };
 
 /* by app_focus. */
@@ -188,7 +194,10 @@ void help_bar(grid* g, i32 y, app_focus focus, app_focus next) {
   bar(g, y, zones[focus].bar, zones[focus].bar_n, next);
 }
 
-void help_naming_bar(grid* g, i32 y) { bar(g, y, naming_bar, ARRAY_LEN(naming_bar), FOCUS_QUERY); }
+void help_prompt_bar(grid* g, i32 y, help_prompt p) {
+  if (p == HELP_PROMPT_DELETE) bar(g, y, delete_bar, ARRAY_LEN(delete_bar), FOCUS_QUERY);
+  else bar(g, y, naming_bar, ARRAY_LEN(naming_bar), FOCUS_QUERY);
+}
 
 static void bar(grid* g, i32 y, const entry* keys, usz n, app_focus next) {
   i32 x = 1;

@@ -53,6 +53,8 @@ static void test_save_overwrites(void);
 static void test_save_new(void);
 static void test_save_refused(void);
 static void test_save_cancelled(void);
+static void test_delete(void);
+static void test_delete_cancelled(void);
 
 static grid* screen;
 
@@ -633,6 +635,70 @@ static void test_save_cancelled(void) {
   remove_folder(dir);
 }
 
+static void test_delete(void) {
+  char* dir = make_folder();
+
+  put(dir, "a.query", ".a");
+  put(dir, "b.query", ".b");
+
+  app* a = open_in(dir, 1, 0);
+  if (!a) return;
+
+  press(a, APP_KEY_BACKTAB);
+  press(a, APP_KEY_ENTER);
+  press(a, 'd');
+  ASSERT_STREQ(cells(a, 0, TOP, SIDE_W - 1), " \xe2\x94\x83" "delete a?");
+  ASSERT_STREQ(cells(a, 0, H - 1, 31), " y delete \xe2\x80\xa2 other keys cancel");
+
+  press(a, 'y');
+  ASSERT_STREQ(read_back(dir, "a.query"), "");
+  ASSERT_STREQ(cells(a, 0, TOP, SIDE_W - 1), " \xe2\x94\x83" "b");
+  ASSERT_STREQ(cells(a, 1, 0, 6), "\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80");
+  ASSERT_STREQ(cells(a, QUERY_X, 1, W - 1), ".a");
+
+  press(a, 'd');
+  press(a, 'y');
+  ASSERT_STREQ(cells(a, 0, TOP, SIDE_W - 1), "  no saved queries");
+  press(a, 'd');
+  ASSERT_STREQ(cells(a, 0, H - 1, 8), " \xe2\x86\x91\xe2\x86\x93 move");
+
+  app_free(a);
+  remove_folder(dir);
+}
+
+static void test_delete_cancelled(void) {
+  char* dir = make_folder();
+
+  put(dir, "a.query", ".a");
+  put(dir, "b.query", ".b");
+
+  app* a = open_in(dir, 1, 0);
+  if (!a) return;
+
+  tick(a, 0);
+  press(a, APP_KEY_BACKTAB);
+  press(a, 'd');
+  press(a, 'j');
+  ASSERT_STREQ(cells(a, 0, TOP, SIDE_W - 1), " \xe2\x94\x83" "a");
+  ASSERT_STREQ(read_back(dir, "a.query"), ".a");
+
+  press(a, 'd');
+  CHECK(click(a, W - 2, TOP));
+  ASSERT_STREQ(cells(a, 0, TOP, SIDE_W - 1), " \xe2\x94\x83" "a");
+
+  ASSERT_EQ(app_focused(a), FOCUS_SIDEBAR);
+  press(a, 'd');
+  ASSERT_STREQ(cells(a, 0, TOP, SIDE_W - 1), " \xe2\x94\x83" "delete a?");
+  put(dir, "0.query", ".");
+  CHECK(tick(a, 1000));
+  ASSERT_STREQ(cells(a, 0, TOP + 1, SIDE_W - 1), " \xe2\x94\x83" "a");
+  press(a, 'y');
+  ASSERT_STREQ(read_back(dir, "a.query"), ".a");
+
+  app_free(a);
+  remove_folder(dir);
+}
+
 #define TESTS(f)                    \
    f(test_absent_without_folder)    \
    f(test_bad_folder)               \
@@ -650,7 +716,9 @@ static void test_save_cancelled(void) {
    f(test_save_overwrites)          \
    f(test_save_new)                 \
    f(test_save_refused)             \
-   f(test_save_cancelled)
+   f(test_save_cancelled)           \
+   f(test_delete)                   \
+   f(test_delete_cancelled)
 
 #define TEST_HELPER_MAIN
 

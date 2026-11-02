@@ -82,6 +82,7 @@ static void save(app* a);
 static void name_key(app* a, u32 key);
 static void save_as(app* a);
 static void stop_naming(app* a);
+static void delete_selected(app* a);
 static b8 rescan(app* a, i64 now);
 static b8 modified(const app* a);
 static void set_loaded(app* a, const char* name, char* text);
@@ -235,7 +236,8 @@ void app_render(app* a, grid* g) {
   );
 
   render_status(a, g);
-  if (a->side.naming) help_naming_bar(g, g->h - 1);
+  if (a->side.naming) help_prompt_bar(g, g->h - 1, HELP_PROMPT_NAME);
+  else if (a->side.deleting) help_prompt_bar(g, g->h - 1, HELP_PROMPT_DELETE);
   else help_bar(g, g->h - 1, a->focus, next_focus(a, 1));
 
   if (!a->help) return;
@@ -261,6 +263,13 @@ static void key(app* a, app_event ev) {
 
   if (a->side.naming) {
     name_key(a, ev.key);
+    return;
+  }
+
+  if (a->side.deleting) {
+    a->side.deleting = 0;
+    if (ev.key == 'y') delete_selected(a);
+
     return;
   }
 
@@ -294,6 +303,7 @@ static void key(app* a, app_event ev) {
 
   if (a->focus == FOCUS_SIDEBAR) {
     if (ev.key == APP_KEY_ENTER) sidebar_enter(a);
+    else if (ev.key == 'd') a->side.deleting = sidebar_selected(&a->side) != NULL;
     else sidebar_key(&a->side, ev.key);
 
     return;
@@ -407,7 +417,7 @@ static void tree_key(app* a, u32 key) {
 }
 
 /* a press focuses the zone under it and picks the tree line or the saved
- * query there, or closes the help or the name row; the wheel scrolls the
+ * query there, or closes the help or a sidebar prompt; the wheel scrolls the
  * help, or the tree under it without focusing it. true when the screen
  * changed. */
 static b8 mouse(app* a, app_event ev) {
@@ -432,6 +442,11 @@ static b8 mouse(app* a, app_event ev) {
 
   if (a->side.naming) {
     name_key(a, ESC);
+    return 1;
+  }
+
+  if (a->side.deleting) {
+    a->side.deleting = 0;
     return 1;
   }
 
@@ -546,8 +561,26 @@ static void stop_naming(app* a) {
   a->focus = a->named_from;
 }
 
+/* the box keeps the text of a deleted loaded query, without its label. */
+static void delete_selected(app* a) {
+  char* name = strdup(sidebar_selected(&a->side));
+
+  if (!name) abort();
+
+  char err[256];
+  b8 ok = store_delete(a->side.store, name, err, sizeof(err));
+  store_failed(a, ok ? NULL : err);
+
+  if (a->loaded && strcmp(a->loaded, name) == 0 && store_find(a->side.store, name) < 0)
+    set_loaded(a, NULL, NULL);
+
+  sidebar_select(&a->side, NULL);
+  free(name);
+}
+
 /* looks at the query folder once a watch interval, or a second: the list
  * follows it, and the box follows the loaded query's file unless edited.
+ * a change cancels a delete, so y never removes a name not asked about.
  * true when something shown changed. */
 static b8 rescan(app* a, i64 now) {
   if (!a->side.store || now < a->scan_at) return 0;
@@ -563,6 +596,7 @@ static b8 rescan(app* a, i64 now) {
 
   sidebar_select(&a->side, selected);
   free(selected);
+  a->side.deleting = 0;
   if (!a->loaded) return 1;
 
   i32 i = store_find(a->side.store, a->loaded);

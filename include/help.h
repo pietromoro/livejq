@@ -13,6 +13,12 @@ typedef struct {
   i32 page; /* rows shown */
 } help_view;
 
+/* the sidebar's inline prompts. */
+typedef enum {
+  HELP_PROMPT_NAME = 0, /* the name row */
+  HELP_PROMPT_DELETE,   /* the confirmation on the selected name */
+} help_prompt;
+
 /* Draws a box centered over g with the keys of the zone focus, tab leading
  * to the zone next, from row v->top on, scrolled when g is too small for all
  * of them. Clamps v->top and sets v->max and v->page. */
@@ -24,7 +30,7 @@ b8 help_scroll(help_view* v, i32 n);
 /* Draws the main keys of the zone focus on row y, as many as fit, tab
  * leading to the zone next. */
 void help_bar(grid* g, i32 y, app_focus focus, app_focus next);
-/* Draws the keys of the sidebar's name row on row y. */
-void help_naming_bar(grid* g, i32 y);
+/* Draws the keys of the sidebar's prompt p on row y. */
+void help_prompt_bar(grid* g, i32 y, help_prompt p);
 
 #endif /* LIVEJQ_HELP_H */
