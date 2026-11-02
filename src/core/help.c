@@ -86,6 +86,12 @@ static const entry sidebar_bar[] = {
     { "q", "quit" },
 };
 
+static const entry naming_bar[] = {
+    { "enter", "save" },
+    { "esc", "cancel" },
+    { "ctrl-c", "quit" },
+};
+
 /* by app_focus. */
 static const struct {
   const entry* keys;
@@ -102,6 +108,7 @@ static const struct {
 /* by app_focus. */
 static const char* const zone_names[] = { "query", "tree", "saved queries" };
 
+static void bar(grid* g, i32 y, const entry* keys, usz n, app_focus next);
 static const char* what_of(const entry* e, app_focus next);
 static void scrollbar(grid* g, i32 x, i32 y, const help_view* v, i32 n);
 static i32 key_rows(const help_view* v, u32 key);
@@ -178,8 +185,12 @@ b8 help_scroll(help_view* v, i32 n) {
 }
 
 void help_bar(grid* g, i32 y, app_focus focus, app_focus next) {
-  const entry* keys = zones[focus].bar;
-  usz n = zones[focus].bar_n;
+  bar(g, y, zones[focus].bar, zones[focus].bar_n, next);
+}
+
+void help_naming_bar(grid* g, i32 y) { bar(g, y, naming_bar, ARRAY_LEN(naming_bar), FOCUS_QUERY); }
+
+static void bar(grid* g, i32 y, const entry* keys, usz n, app_focus next) {
   i32 x = 1;
 
   for (usz i = 0; i < n; i++) {

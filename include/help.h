@@ -24,5 +24,7 @@ b8 help_scroll(help_view* v, i32 n);
 /* Draws the main keys of the zone focus on row y, as many as fit, tab
  * leading to the zone next. */
 void help_bar(grid* g, i32 y, app_focus focus, app_focus next);
+/* Draws the keys of the sidebar's name row on row y. */
+void help_naming_bar(grid* g, i32 y);
 
 #endif /* LIVEJQ_HELP_H */

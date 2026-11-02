@@ -28,6 +28,7 @@
 #define MODIFIED    "\xe2\x97\x8f"
 #define MIN_PATH    16 /* columns the path keeps before the times go, an error keeps all */
 #define CTRL(c)     ((c) & 0x1f)
+#define ESC         0x1b
 
 struct app {
   const char* path;
@@ -55,6 +56,8 @@ struct app {
   char* loaded;      /* the saved query in the box, NULL for none */
   char* loaded_text; /* its text as last read */
   file_stamp loaded_stamp;
+  app_focus named_from; /* the focus to return to from the name row */
+  b8 side_opened;       /* the name row showed the sidebar */
 
   editor query;
   b8 edited;      /* not submitted yet */
@@ -76,6 +79,9 @@ static app_focus next_focus(const app* a, i32 step);
 static void tree_key(app* a, u32 key);
 static void sidebar_enter(app* a);
 static void save(app* a);
+static void name_key(app* a, u32 key);
+static void save_as(app* a);
+static void stop_naming(app* a);
 static b8 rescan(app* a, i64 now);
 static b8 modified(const app* a);
 static void set_loaded(app* a, const char* name, char* text);
@@ -83,7 +89,7 @@ static void store_failed(app* a, const char* err);
 static b8 mouse(app* a, app_event ev);
 static b8 poll(app* a, i64 now);
 static void reload(app* a);
-static b8 edit(app* a, u32 key);
+static b8 edit(editor* e, u32 key);
 static void submit(app* a);
 static b8 apply(app* a);
 static b8 failed(const app* a);
@@ -158,6 +164,7 @@ void app_free(app* a) {
   jv_free(a->load_error);
   jv_free(a->store_error);
   editor_free(&a->query);
+  editor_free(&a->side.name);
   store_free(a->side.store);
   free(a->loaded);
   free(a->loaded_text);
@@ -228,7 +235,9 @@ void app_render(app* a, grid* g) {
   );
 
   render_status(a, g);
-  help_bar(g, g->h - 1, a->focus, next_focus(a, 1));
+  if (a->side.naming) help_naming_bar(g, g->h - 1);
+  else help_bar(g, g->h - 1, a->focus, next_focus(a, 1));
+
   if (!a->help) return;
 
   help_render(g, a->focus, next_focus(a, 1), &a->help_at);
@@ -247,6 +256,11 @@ static void key(app* a, app_event ev) {
 
   if (a->help) {
     a->help = help_key(&a->help_at, ev.key);
+    return;
+  }
+
+  if (a->side.naming) {
+    name_key(a, ev.key);
     return;
   }
 
@@ -290,7 +304,7 @@ static void key(app* a, app_event ev) {
     return;
   }
 
-  if (!edit(a, ev.key)) return;
+  if (!edit(&a->query, ev.key)) return;
 
   a->edited = 1;
   a->submit_at = ev.now_ms + DEBOUNCE_MS;
@@ -393,8 +407,9 @@ static void tree_key(app* a, u32 key) {
 }
 
 /* a press focuses the zone under it and picks the tree line or the saved
- * query there, or closes the help; the wheel scrolls the help, or the tree
- * under it without focusing it. true when the screen changed. */
+ * query there, or closes the help or the name row; the wheel scrolls the
+ * help, or the tree under it without focusing it. true when the screen
+ * changed. */
 static b8 mouse(app* a, app_event ev) {
   app_focus was = a->focus;
   i32 side_w = sidebar_width(&a->side, a->w);
@@ -412,6 +427,11 @@ static b8 mouse(app* a, app_event ev) {
 
   if (a->help) {
     a->help = 0;
+    return 1;
+  }
+
+  if (a->side.naming) {
+    name_key(a, ESC);
     return 1;
   }
 
@@ -451,9 +471,19 @@ static void sidebar_enter(app* a) {
   submit(a);
 }
 
-/* writes the box over the loaded saved query. */
+/* writes the box over the loaded saved query, or opens the name row for
+ * a new one, showing the sidebar if hidden. */
 static void save(app* a) {
-  if (!a->loaded) return;
+  if (!a->loaded) {
+    a->named_from = a->focus;
+    a->side_opened = !a->side.shown;
+    a->side.shown = 1;
+    a->side.naming = 1;
+    a->focus = FOCUS_SIDEBAR;
+    editor_set(&a->side.name, "");
+    store_failed(a, NULL);
+    return;
+  }
 
   const char* text = a->query.text ? a->query.text : "";
   char err[256];
@@ -467,6 +497,53 @@ static void save(app* a) {
 
   store_failed(a, NULL);
   set_loaded(a, a->loaded, copy);
+}
+
+static void name_key(app* a, u32 key) {
+  if (key == ESC) {
+    stop_naming(a);
+    if (a->side_opened) a->side.shown = 0;
+
+    store_failed(a, NULL);
+    return;
+  }
+
+  if (key == APP_KEY_ENTER) save_as(a);
+  else edit(&a->side.name, key);
+}
+
+/* saves the box under the typed name and loads it. a name already saved,
+ * or one the store refuses, keeps the row open with the reason. */
+static void save_as(app* a) {
+  const char* name = a->side.name.text;
+
+  if (!name) return;
+
+  char err[256];
+  if (store_find(a->side.store, name) >= 0) {
+    snprintf(err, sizeof(err), "%s is already saved, load it to overwrite it", name);
+    store_failed(a, err);
+    return;
+  }
+
+  const char* text = a->query.text ? a->query.text : "";
+  if (!store_write(a->side.store, name, text, err, sizeof(err))) {
+    store_failed(a, err);
+    return;
+  }
+
+  char* copy = strdup(text);
+  if (!copy) abort();
+
+  store_failed(a, NULL);
+  set_loaded(a, name, copy);
+  sidebar_select(&a->side, name);
+  stop_naming(a);
+}
+
+static void stop_naming(app* a) {
+  a->side.naming = 0;
+  a->focus = a->named_from;
 }
 
 /* looks at the query folder once a watch interval, or a second: the list
@@ -586,40 +663,40 @@ static void reload(app* a) {
 }
 
 /* true when the text changed. */
-static b8 edit(app* a, u32 key) {
+static b8 edit(editor* e, u32 key) {
   switch (key) {
-    case APP_KEY_BACKSPACE: return editor_backspace(&a->query);
-    case APP_KEY_DELETE: return editor_delete(&a->query);
+    case APP_KEY_BACKSPACE: return editor_backspace(e);
+    case APP_KEY_DELETE: return editor_delete(e);
     case APP_KEY_WORD_BACKSPACE:
-    case CTRL('w'): return editor_delete_word(&a->query);
-    case CTRL('u'): return editor_delete_to_start(&a->query);
-    case CTRL('k'): return editor_delete_to_end(&a->query);
+    case CTRL('w'): return editor_delete_word(e);
+    case CTRL('u'): return editor_delete_to_start(e);
+    case CTRL('k'): return editor_delete_to_end(e);
     case APP_KEY_WORD_LEFT:
-      editor_word_left(&a->query);
+      editor_word_left(e);
       return 0;
     case APP_KEY_WORD_RIGHT:
-      editor_word_right(&a->query);
+      editor_word_right(e);
       return 0;
     case APP_KEY_LEFT:
-      editor_left(&a->query);
+      editor_left(e);
       return 0;
     case APP_KEY_RIGHT:
-      editor_right(&a->query);
+      editor_right(e);
       return 0;
     case CTRL('a'):
     case APP_KEY_HOME:
-      editor_home(&a->query);
+      editor_home(e);
       return 0;
     case CTRL('e'):
     case APP_KEY_END:
-      editor_end(&a->query);
+      editor_end(e);
       return 0;
     default: break;
   }
 
   if (key < 0x20 || key == 0x7f || key >= 0x110000) return 0;
 
-  editor_insert(&a->query, key);
+  editor_insert(e, key);
   return 1;
 }
 

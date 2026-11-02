@@ -10,6 +10,8 @@
 #define BOTTOM_END "\xe2\x95\xaf"
 #define GUTTER     "\xe2\x94\x83"
 #define TITLE      " saved "
+#define TITLE_NEW  " save as "
+#define PROMPT     "\xe2\x9d\xaf "
 #define HINT       "no saved queries"
 #define HINT_SAVE  "ctrl-s saves one"
 #define MIN_WIDTH  20
@@ -17,6 +19,7 @@
 
 static void border(grid* g, i32 y, i32 w, const char* end, u8 st);
 static void clamp(sidebar* s);
+static void name_row(sidebar* s, grid* g, i32 y, i32 w);
 
 i32 sidebar_width(const sidebar* s, i32 screen_w) {
   if (!s->store || !s->shown) return 0;
@@ -41,12 +44,21 @@ void sidebar_render(sidebar* s, grid* g, i32 y, i32 h, const char* loaded, b8 fo
 
   border(g, y, w, TOP_END, st);
   border(g, y + h - 1, w, BOTTOM_END, st);
-  grid_put(g, 1, y, w - 1, TITLE, strlen(TITLE), focused ? STYLE_ACCENT : STYLE_LABEL);
+  const char* title = s->naming ? TITLE_NEW : TITLE;
+  grid_put(g, 1, y, w - 1, title, strlen(title), focused ? STYLE_ACCENT : STYLE_LABEL);
   for (i32 i = 1; i < h - 1; i++)
     grid_put(g, w - 1, y + i, w, V_LINE, strlen(V_LINE), st);
 
+  if (s->naming) {
+    name_row(s, g, y + 1, w);
+    y++;
+    h--;
+  }
+
   i32 n = (i32)store_count(s->store);
   s->page = h - 2;
+  if (n == 0 && s->naming) return;
+
   if (n == 0) {
     grid_put_fit(g, 2, y + 1, w - 2, HINT, strlen(HINT), STYLE_EMPTY);
     grid_put_fit(g, 2, y + 2, w - 2, HINT_SAVE, strlen(HINT_SAVE), STYLE_EMPTY);
@@ -138,6 +150,14 @@ static void border(grid* g, i32 y, i32 w, const char* end, u8 st) {
     grid_put(g, x, y, w, H_LINE, strlen(H_LINE), st);
 
   grid_put(g, w - 1, y, w, end, strlen(end), st);
+}
+
+/* the prompt and the name being typed, with the terminal cursor. */
+static void name_row(sidebar* s, grid* g, i32 y, i32 w) {
+  i32 x = grid_put(g, 2, y, w - 2, PROMPT, strlen(PROMPT), STYLE_ACCENT);
+
+  g->cursor_x = editor_render(&s->name, g, x, y, w - 2, NULL);
+  g->cursor_y = y;
 }
 
 static void clamp(sidebar* s) {

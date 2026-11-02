@@ -22,6 +22,7 @@
 #define SETTLE_MS 5000
 #define CTRL(c)   ((c) & 0x1f)
 #define GUTTER    0x2503
+#define ESC       0x1b
 
 static char* make_folder(void);
 static void remove_folder(char* dir);
@@ -49,6 +50,9 @@ static void test_load(void);
 static void test_modified_label(void);
 static void test_follows_loaded_file(void);
 static void test_save_overwrites(void);
+static void test_save_new(void);
+static void test_save_refused(void);
+static void test_save_cancelled(void);
 
 static grid* screen;
 
@@ -512,9 +516,6 @@ static void test_save_overwrites(void) {
   app* a = open_in(dir, 1, 0);
   if (!a) return;
 
-  press(a, CTRL('s'));
-  ASSERT_STREQ(read_back(dir, "a.query"), ".a");
-
   press(a, APP_KEY_BACKTAB);
   press(a, APP_KEY_ENTER);
   press(a, '\t');
@@ -535,6 +536,103 @@ static void test_save_overwrites(void) {
   remove_folder(dir);
 }
 
+static void test_save_new(void) {
+  char* dir = make_folder();
+
+  put(dir, "b.query", ".b");
+
+  app* a = open_in(dir, 1, 0);
+  if (!a) return;
+
+  type(a, "[]");
+  press(a, CTRL('s'));
+  ASSERT_EQ(app_focused(a), FOCUS_SIDEBAR);
+  ASSERT_STREQ(cells(a, 0, TOP - 1, 11), "\xe2\x94\x80 save as \xe2\x94\x80");
+  ASSERT_STREQ(cells(a, 0, TOP, SIDE_W - 1), "  \xe2\x9d\xaf");
+  ASSERT_STREQ(cells(a, 0, TOP + 1, SIDE_W - 1), " \xe2\x94\x83" "b");
+  ASSERT_EQ(screen->cursor_x, 4);
+  ASSERT_EQ(screen->cursor_y, TOP);
+  ASSERT_STREQ(cells(a, 0, H - 1, 24), " enter save \xe2\x80\xa2 esc cancel");
+
+  type(a, "aq");
+  press(a, APP_KEY_ENTER);
+  ASSERT_STREQ(read_back(dir, "aq.query"), ".[]\n");
+  ASSERT_EQ(app_focused(a), FOCUS_QUERY);
+  ASSERT_STREQ(cells(a, 0, TOP, SIDE_W - 1), " \xe2\x94\x83" "aq");
+  ASSERT_STREQ(cells(a, 1, 0, 7), "\xe2\x94\x80 aq \xe2\x94\x80");
+  ASSERT_EQ(gutter_row(a, 1), TOP);
+
+  type(a, " | .");
+  press(a, CTRL('s'));
+  ASSERT_STREQ(read_back(dir, "aq.query"), ".[] | .\n");
+
+  app_free(a);
+  remove_folder(dir);
+}
+
+static void test_save_refused(void) {
+  char* dir = make_folder();
+
+  put(dir, "b.query", ".b");
+
+  app* a = open_in(dir, 1, 0);
+  if (!a) return;
+
+  press(a, CTRL('s'));
+  press(a, APP_KEY_ENTER);
+  CHECK(cells(a, 0, TOP, SIDE_W - 1)[0] != '\0');
+
+  type(a, "b");
+  press(a, APP_KEY_ENTER);
+  ASSERT_STREQ(read_back(dir, "b.query"), ".b");
+  ASSERT_STREQ(cells(a, 1, H - 2, 8), "ERROR");
+  ASSERT_STREQ(cells(a, 0, TOP, SIDE_W - 1), "  \xe2\x9d\xaf b");
+
+  press(a, APP_KEY_BACKSPACE);
+  type(a, "a/b");
+  press(a, APP_KEY_ENTER);
+  ASSERT_STREQ(cells(a, 1, H - 2, 8), "ERROR");
+  ASSERT_EQ(app_focused(a), FOCUS_SIDEBAR);
+
+  press(a, CTRL('u'));
+  type(a, "c");
+  press(a, APP_KEY_ENTER);
+  ASSERT_STREQ(read_back(dir, "c.query"), ".\n");
+  ASSERT_STREQ(cells(a, 1, H - 2, 8), "LIVEJQ");
+
+  app_free(a);
+  remove_folder(dir);
+}
+
+static void test_save_cancelled(void) {
+  char* dir = make_folder();
+
+  app* a = open_in(dir, 1, 0);
+  if (!a) return;
+
+  press(a, '\t');
+  press(a, CTRL('b'));
+  ASSERT_STREQ(cells(a, 0, TOP - 1, 4), "");
+  press(a, CTRL('s'));
+  ASSERT_STREQ(cells(a, 0, TOP, SIDE_W - 1), "  \xe2\x9d\xaf");
+  type(a, "q?");
+  ASSERT_STREQ(cells(a, 0, TOP, SIDE_W - 1), "  \xe2\x9d\xaf q?");
+  CHECK(!app_quitting(a));
+
+  press(a, ESC);
+  ASSERT_STREQ(cells(a, 0, TOP - 1, 4), "");
+  ASSERT_EQ(app_focused(a), FOCUS_TREE);
+
+  press(a, CTRL('b'));
+  press(a, CTRL('s'));
+  CHECK(click(a, W - 2, TOP));
+  ASSERT_STREQ(cells(a, 0, TOP, SIDE_W - 1), "  no saved queries");
+  ASSERT_EQ(app_focused(a), FOCUS_TREE);
+
+  app_free(a);
+  remove_folder(dir);
+}
+
 #define TESTS(f)                    \
    f(test_absent_without_folder)    \
    f(test_bad_folder)               \
@@ -549,7 +647,10 @@ static void test_save_overwrites(void) {
    f(test_load)                     \
    f(test_modified_label)           \
    f(test_follows_loaded_file)      \
-   f(test_save_overwrites)
+   f(test_save_overwrites)          \
+   f(test_save_new)                 \
+   f(test_save_refused)             \
+   f(test_save_cancelled)
 
 #define TEST_HELPER_MAIN
 

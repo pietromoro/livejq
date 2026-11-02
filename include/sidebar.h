@@ -3,21 +3,25 @@
 #define LIVEJQ_SIDEBAR_H
 
 #include "defines.h"
+#include "editor.h"
 #include "grid.h"
 #include "store.h"
 
 typedef struct {
   store* store;
   b8 shown;
-  i32 cursor; /* index of the selected name */
-  i32 top;    /* first name shown */
-  i32 page;   /* names shown by the last render */
+  i32 cursor;  /* index of the selected name */
+  i32 top;     /* first name shown */
+  i32 page;    /* names shown by the last render */
+  b8 naming;   /* the name row for a new saved query is open */
+  editor name; /* its text */
 } sidebar;
 
 /* The columns the panel takes on a screen screen_w wide, 0 while hidden. */
 i32 sidebar_width(const sidebar* s, i32 screen_w);
 /* Draws the panel from column 0 into rows y..y+h-1, the name loaded marked,
- * scrolled to show the cursor. */
+ * scrolled to show the cursor. While naming, the name row comes first and
+ * takes the terminal cursor. */
 void sidebar_render(sidebar* s, grid* g, i32 y, i32 h, const char* loaded, b8 focused);
 /* Moves for j k g G, arrows, Home End, PgUp PgDn. False when key is not one
  * of them. */
