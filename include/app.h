@@ -25,6 +25,7 @@ enum {
   APP_KEY_WORD_RIGHT,
   APP_KEY_WORD_BACKSPACE,
   APP_KEY_F1,
+  APP_KEY_ALT_S,
 };
 
 typedef enum {

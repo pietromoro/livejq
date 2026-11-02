@@ -53,6 +53,7 @@ static void test_save_overwrites(void);
 static void test_save_new(void);
 static void test_save_refused(void);
 static void test_save_cancelled(void);
+static void test_save_as(void);
 static void test_delete(void);
 static void test_delete_cancelled(void);
 
@@ -582,7 +583,8 @@ static void test_save_refused(void) {
 
   press(a, CTRL('s'));
   press(a, APP_KEY_ENTER);
-  CHECK(cells(a, 0, TOP, SIDE_W - 1)[0] != '\0');
+  ASSERT_STREQ(cells(a, 0, TOP, SIDE_W - 1), "  \xe2\x9d\xaf");
+  ASSERT_STREQ(cells(a, 1, H - 2, 8), "LIVEJQ");
 
   type(a, "b");
   press(a, APP_KEY_ENTER);
@@ -630,6 +632,45 @@ static void test_save_cancelled(void) {
   CHECK(click(a, W - 2, TOP));
   ASSERT_STREQ(cells(a, 0, TOP, SIDE_W - 1), "  no saved queries");
   ASSERT_EQ(app_focused(a), FOCUS_TREE);
+
+  app_free(a);
+  remove_folder(dir);
+}
+
+static void test_save_as(void) {
+  char* dir = make_folder();
+
+  put(dir, "a.query", ".a");
+  put(dir, "b.query", ".b");
+
+  app* a = open_in(dir, 1, 0);
+  if (!a) return;
+
+  press(a, APP_KEY_BACKTAB);
+  press(a, APP_KEY_ENTER);
+  press(a, '\t');
+  type(a, "[0]");
+  press(a, APP_KEY_ALT_S);
+  ASSERT_STREQ(cells(a, 0, TOP, SIDE_W - 1), "  \xe2\x9d\xaf a");
+  press(a, APP_KEY_ENTER);
+  ASSERT_STREQ(read_back(dir, "a.query"), ".a[0]\n");
+  ASSERT_EQ(app_focused(a), FOCUS_QUERY);
+
+  type(a, " | .");
+  press(a, APP_KEY_ALT_S);
+  press(a, APP_KEY_BACKSPACE);
+  type(a, "b");
+  press(a, APP_KEY_ENTER);
+  ASSERT_STREQ(read_back(dir, "b.query"), ".b");
+  ASSERT_STREQ(cells(a, 1, H - 2, 8), "ERROR");
+
+  press(a, APP_KEY_BACKSPACE);
+  type(a, "c");
+  press(a, APP_KEY_ENTER);
+  ASSERT_STREQ(read_back(dir, "c.query"), ".a[0] | .\n");
+  ASSERT_STREQ(read_back(dir, "a.query"), ".a[0]\n");
+  ASSERT_STREQ(cells(a, 1, 0, 6), "\xe2\x94\x80 c \xe2\x94\x80");
+  ASSERT_STREQ(cells(a, 0, TOP + 2, SIDE_W - 1), " \xe2\x94\x83" "c");
 
   app_free(a);
   remove_folder(dir);
@@ -717,6 +758,7 @@ static void test_delete_cancelled(void) {
    f(test_save_new)                 \
    f(test_save_refused)             \
    f(test_save_cancelled)           \
+   f(test_save_as)                  \
    f(test_delete)                   \
    f(test_delete_cancelled)
 

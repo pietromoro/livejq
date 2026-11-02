@@ -223,6 +223,7 @@ static b8 translate(i32 kind, wint_t ch, u32* key) {
       { ALT_BKSP, APP_KEY_WORD_BACKSPACE },
       { CTL_BKSP, APP_KEY_WORD_BACKSPACE },
       { KEY_F(1), APP_KEY_F1 },
+      { ALT_S, APP_KEY_ALT_S },
   };
 
   if (kind == OK && (ch == '\r' || ch == '\n')) {

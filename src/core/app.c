@@ -79,6 +79,8 @@ static app_focus next_focus(const app* a, i32 step);
 static void tree_key(app* a, u32 key);
 static void sidebar_enter(app* a);
 static void save(app* a);
+static void start_naming(app* a, const char* name);
+static b8 write_as(app* a, const char* name);
 static void name_key(app* a, u32 key);
 static void save_as(app* a);
 static void stop_naming(app* a);
@@ -285,6 +287,11 @@ static void key(app* a, app_event ev) {
     return;
   }
 
+  if (ev.key == APP_KEY_ALT_S && a->side.store) {
+    start_naming(a, a->loaded ? a->loaded : "");
+    return;
+  }
+
   if (ev.key == APP_KEY_F1 || (ev.key == '?' && a->focus != FOCUS_QUERY)) {
     a->help = 1;
     a->help_at.top = 0;
@@ -486,32 +493,40 @@ static void sidebar_enter(app* a) {
   submit(a);
 }
 
-/* writes the box over the loaded saved query, or opens the name row for
- * a new one, showing the sidebar if hidden. */
+/* writes the box over the loaded saved query, or asks for a name. */
 static void save(app* a) {
-  if (!a->loaded) {
-    a->named_from = a->focus;
-    a->side_opened = !a->side.shown;
-    a->side.shown = 1;
-    a->side.naming = 1;
-    a->focus = FOCUS_SIDEBAR;
-    editor_set(&a->side.name, "");
-    store_failed(a, NULL);
-    return;
-  }
+  if (a->loaded) write_as(a, a->loaded);
+  else start_naming(a, "");
+}
 
+/* opens the name row with name in it, showing the sidebar if hidden. */
+static void start_naming(app* a, const char* name) {
+  a->named_from = a->focus;
+  a->side_opened = !a->side.shown;
+  a->side.shown = 1;
+  a->side.naming = 1;
+  a->focus = FOCUS_SIDEBAR;
+  editor_set(&a->side.name, name);
+  store_failed(a, NULL);
+}
+
+/* saves the box under name and loads it from there. false on a write
+ * error, shown in the status. */
+static b8 write_as(app* a, const char* name) {
   const char* text = a->query.text ? a->query.text : "";
   char err[256];
-  if (!store_write(a->side.store, a->loaded, text, err, sizeof(err))) {
+
+  if (!store_write(a->side.store, name, text, err, sizeof(err))) {
     store_failed(a, err);
-    return;
+    return 0;
   }
 
   char* copy = strdup(text);
   if (!copy) abort();
 
   store_failed(a, NULL);
-  set_loaded(a, a->loaded, copy);
+  set_loaded(a, name, copy);
+  return 1;
 }
 
 static void name_key(app* a, u32 key) {
@@ -527,31 +542,25 @@ static void name_key(app* a, u32 key) {
   else edit(&a->side.name, key);
 }
 
-/* saves the box under the typed name and loads it. a name already saved,
- * or one the store refuses, keeps the row open with the reason. */
+/* saves the box under the typed name and loads it. a name saved before,
+ * other than the loaded one, or one the store refuses, keeps the row open
+ * with the reason. */
 static void save_as(app* a) {
   const char* name = a->side.name.text;
 
-  if (!name) return;
+  if (!name || !*name) return;
 
-  char err[256];
-  if (store_find(a->side.store, name) >= 0) {
+  b8 same = a->loaded && strcmp(name, a->loaded) == 0;
+  if (!same && store_find(a->side.store, name) >= 0) {
+    char err[256];
+
     snprintf(err, sizeof(err), "%s is already saved, load it to overwrite it", name);
     store_failed(a, err);
     return;
   }
 
-  const char* text = a->query.text ? a->query.text : "";
-  if (!store_write(a->side.store, name, text, err, sizeof(err))) {
-    store_failed(a, err);
-    return;
-  }
+  if (!write_as(a, name)) return;
 
-  char* copy = strdup(text);
-  if (!copy) abort();
-
-  store_failed(a, NULL);
-  set_loaded(a, name, copy);
   sidebar_select(&a->side, name);
   stop_naming(a);
 }

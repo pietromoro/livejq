@@ -54,6 +54,7 @@ static const entry sidebar_keys[] = {
     { "pgup pgdn", "page" },
     { "enter", "load into the query" },
     { "ctrl-s", "save the query over the loaded one" },
+    { "alt-s", "save the query under another name" },
     { "d", "delete, y confirms" },
     { "ctrl-b", "hide / show" },
     { "tab", NULL },
