@@ -105,7 +105,6 @@ static app* open_in(const char* dir, b8 with_folder, i64 watch_ms) {
 
   char err[256];
   app* a = app_new(&o, err, sizeof(err));
-
   if (!a) FAIL("app_new(%s): %s", dir, err);
   else CHECK(app_settle(a, SETTLE_MS));
 

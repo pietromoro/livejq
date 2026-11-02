@@ -98,7 +98,6 @@ static usz closing(lexer* lx, usz i) {
   char top = lx->s[lx->opens[lx->depth - 1]];
 
   if (top != want && !(c == ')' && top == '\\')) return paint(lx, i, i + 1, STYLE_ERROR);
-
   lx->depth--;
   return paint(lx, i, i + 1, STYLE_PUNCT);
 }
@@ -177,7 +176,8 @@ static usz paint(lexer* lx, usz from, usz to, u8 st) {
 static usz name_end(const lexer* lx, usz i) {
   for (;;) {
     while (i < lx->len && name_byte(lx->s[i])) i++;
-    if (i + 2 >= lx->len || lx->s[i] != ':' || lx->s[i + 1] != ':' || !name_start(lx->s[i + 2])) return i;
+    if (i + 2 >= lx->len || lx->s[i] != ':' || lx->s[i + 1] != ':' || !name_start(lx->s[i + 2]))
+      return i;
 
     i += 2;
   }

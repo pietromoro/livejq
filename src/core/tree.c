@@ -293,7 +293,6 @@ void tree_path(tree* t, char* buf, usz cap) {
   if (t->nrows == 0) return;
 
   strbuf b = { 0 };
-
   path_display(t, t->cursor, &b);
   if (t->rows[t->cursor].parent < 0) sb_add(&b, ".", 1);
 
@@ -330,7 +329,6 @@ static void add_rows(tree* t, jv value, jv key, i32 parent, i32 depth) {
   if (depth > 0) key_segment(&t->key, key, depth);
 
   node* shown = view_node(t);
-
   if (t->nrows == t->rows_cap) {
     t->rows_cap = t->rows_cap ? t->rows_cap * 2 : 64;
     t->rows = realloc(t->rows, sizeof(row) * (usz)t->rows_cap);
@@ -349,7 +347,6 @@ static void add_rows(tree* t, jv value, jv key, i32 parent, i32 depth) {
   match_cursor(t, r);
 
   jv items = members(&t->rows[r]);
-
   if (t->rows[r].open && jv_get_kind(items) == JV_KIND_ARRAY) {
     jv_array_foreach(items, i, item) add_rows(t, item, jv_number(i), r, depth + 1);
   } else if (t->rows[r].open) {
@@ -377,7 +374,6 @@ static b8 is_open(tree* t, const row* w) {
   if (!has_children(members(w))) return 0;
 
   fold f = node_find(t, t->key.s)->fold;
-
   if (f != FOLD_NONE) return f == FOLD_OPEN;
 
   return jv_is_valid(w->derived) || t->mode == EXPAND_ALL || (t->mode == EXPAND_ROOTS && w->depth == 0);
@@ -514,7 +510,6 @@ static void key_segment(strbuf* b, jv key, i32 depth) {
   if (depth == 0) return;
 
   char num[24];
-
   if (jv_get_kind(key) == JV_KIND_NUMBER) {
     snprintf(num, sizeof(num), "[%d]", (i32)jv_number_value(key));
     sb_add(b, num, strlen(num));
@@ -556,7 +551,6 @@ static void cycle_unit(tree* t) {
 
     jv text = view_text(w->value, w->view, &ctx);
     b8 applies = jv_is_valid(text);
-
     jv_free(text);
     if (applies) {
       set_view(t, w->view, ctx.unit);
@@ -623,12 +617,12 @@ static node* view_node(tree* t) {
 /* the view of a line no view was set on: dates for the time claims in a
  * json web token's payload. */
 static view_id implied_view(tree* t, i32 parent, jv key) {
-  if (parent < 0 || t->rows[parent].parent < 0 || jv_get_kind(key) != JV_KIND_STRING) return VIEW_DEFAULT;
+  if (parent < 0 || t->rows[parent].parent < 0 || jv_get_kind(key) != JV_KIND_STRING)
+    return VIEW_DEFAULT;
 
   const row* payload = &t->rows[parent];
   const row* token = &t->rows[payload->parent];
   const char* name = jv_string_value(key);
-
   if (
     token->view != VIEW_JWT
     || !jv_is_valid(token->derived)
@@ -807,7 +801,6 @@ static void path_display(tree* t, i32 r, strbuf* b) {
 
   const row* p = &t->rows[w->parent];
   b8 first = p->parent < 0;
-
   if (jv_is_valid(p->derived)) {
     if (b->len && b->s[b->len - 1] != ' ') sb_add(b, " | ", 3);
     sb_add(b, view_jq(p->view), strlen(view_jq(p->view)));

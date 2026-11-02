@@ -99,7 +99,6 @@ app* app_new(const app_opts* opts, char* err, usz errlen) {
   app* a;
 
   store* saved = NULL;
-
   if (opts->query_folder && !(saved = store_open(opts->query_folder, err, errlen))) {
     jv_free(opts->args);
     return NULL;
@@ -435,7 +434,6 @@ static void sidebar_enter(app* a) {
 
   char err[256];
   char* text = store_read(a->side.store, name, err, sizeof(err));
-
   if (!text) {
     store_failed(a, err);
     return;
@@ -457,7 +455,6 @@ static b8 rescan(app* a, i64 now) {
 
   const char* name = sidebar_selected(&a->side);
   char* selected = name ? strdup(name) : NULL;
-
   if (!store_rescan(a->side.store)) {
     free(selected);
     return 0;
@@ -468,19 +465,16 @@ static b8 rescan(app* a, i64 now) {
   if (!a->loaded) return 1;
 
   i32 i = store_find(a->side.store, a->loaded);
-
   if (i < 0) {
     set_loaded(a, NULL, NULL);
     return 1;
   }
 
   file_stamp st = store_stamp(a->side.store, (usz)i);
-
   if (st.mtime_ns == a->loaded_stamp.mtime_ns && st.size == a->loaded_stamp.size) return 1;
 
   char err[256];
   char* text = store_read(a->side.store, a->loaded, err, sizeof(err));
-
   if (!text) return 1;
 
   if (!modified(a)) {
@@ -507,7 +501,6 @@ static void set_loaded(app* a, const char* name, char* text) {
   if (!copy) return;
 
   i32 i = store_find(a->side.store, copy);
-
   if (i >= 0) a->loaded_stamp = store_stamp(a->side.store, (usz)i);
 }
 
@@ -691,14 +684,13 @@ static void render_query(app* a, grid* g) {
 static void render_status(app* a, grid* g) {
   i32 y = g->h - 2;
   jv err = jv_get_kind(a->error) == JV_KIND_STRING ? a->error : a->load_error;
-
-  if (jv_get_kind(err) != JV_KIND_STRING) err = a->store_error;
   i32 name_w;
   i32 end;
   i32 right;
   i32 x;
 
   if (y < 0) return;
+  if (jv_get_kind(err) != JV_KIND_STRING) err = a->store_error;
 
   grid_fill(g, y, STYLE_STATUS);
 
@@ -719,7 +711,6 @@ static void render_status(app* a, grid* g) {
   }
 
   const char* pill = a->missing ? " MISSING " : failed(a) ? " ERROR " : " LIVEJQ ";
-
   x = segment(g, 0, pill, failed(a) ? STYLE_PILL_ERROR : STYLE_PILL);
   end = g->w - utf8_columns(outputs, strlen(outputs)) - utf8_columns(time, strlen(time));
   if (end < x) end = x;
@@ -727,7 +718,6 @@ static void render_status(app* a, grid* g) {
   b8 erred = jv_get_kind(err) == JV_KIND_STRING;
   char path[512];
   const char* mid = path;
-
   if (erred) mid = jv_string_value(err);
   else tree_path(a->tree, path, sizeof(path));
 
@@ -736,7 +726,6 @@ static void render_status(app* a, grid* g) {
   i32 keep = erred ? utf8_columns(mid, mid_len) : MIN_PATH;
   u8 mid_style = erred ? STYLE_STATUS_ERROR : STYLE_STATUS_FAINT;
   char info[160];
-
   times(a, info, sizeof(info), end - x - utf8_columns(a->name, strlen(a->name)) - 2 - keep);
   right = end - utf8_columns(info, strlen(info));
 
@@ -766,7 +755,6 @@ static void times(const app* a, char* buf, usz cap, i32 room) {
   buf[0] = '\0';
 
   char part[64];
-
   if (a->watch_ms) {
     jv every = view_text(jv_number((f64)a->watch_ms / 1000), VIEW_DURATION, NULL);
 

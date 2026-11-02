@@ -22,7 +22,6 @@ i32 sidebar_width(const sidebar* s, i32 screen_w) {
   if (!s->store || !s->shown) return 0;
 
   i32 w = MIN_WIDTH;
-
   for (usz i = 0; i < store_count(s->store); i++) {
     const char* name = store_name(s->store, i);
     i32 need = utf8_columns(name, strlen(name)) + PADDING;
@@ -47,7 +46,6 @@ void sidebar_render(sidebar* s, grid* g, i32 y, i32 h, const char* loaded, b8 fo
     grid_put(g, w - 1, y + i, w, V_LINE, strlen(V_LINE), st);
 
   i32 n = (i32)store_count(s->store);
-
   s->page = h - 2;
   if (n == 0) {
     grid_put_fit(g, 2, y + 1, w - 2, HINT, strlen(HINT), STYLE_EMPTY);
@@ -62,7 +60,6 @@ void sidebar_render(sidebar* s, grid* g, i32 y, i32 h, const char* loaded, b8 fo
   if (s->cursor >= s->top + s->page) s->top = s->cursor - s->page + 1;
 
   u8 selected = focused ? STYLE_SELECTED : STYLE_SELECTED_IDLE;
-
   for (i32 i = 0; i < s->page && s->top + i < n; i++) {
     i32 r = s->top + i;
     const char* name = store_name(s->store, (usz)r);

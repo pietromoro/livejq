@@ -85,7 +85,6 @@ static app* open_watched(const char* path, const char* query, i64 watch_ms) {
 
   char err[256];
   app* a = app_new(&o, err, sizeof(err));
-
   if (!a) FAIL("app_new(%s): %s", path, err);
   else CHECK(app_settle(a, SETTLE_MS));
 
@@ -682,7 +681,6 @@ static void test_watch_missing_file(void) {
   write_file(path, "{\"a\":true}");
 
   app* a = open_watched(path, ".", 1000);
-
   if (!a) return;
 
   tick(a, 0);
@@ -712,30 +710,24 @@ static void test_watch_times(void) {
   write_file(path, "[1]");
 
   app* a = open_watched(path, ".", 1000);
-
   if (!a) return;
 
   tick(a, 0);
 
   file_stamp st;
-
   file_stat(path, &st);
 
   grid* wide = grid_new(140, H);
-
   app_render(a, wide);
 
   char buf[1024];
-
   grid_line(wide, H - 2, buf, sizeof(buf));
   CHECK(strstr(buf, " \xe2\x9f\xb3 1s  mod ") != NULL);
 
   char at[32];
-
   view_clock(st.mtime_ns / 1000000, WALL_MS, at, sizeof(at));
 
   char want[96];
-
   snprintf(want, sizeof(want), " mod %s  loaded ", at);
   CHECK(strstr(buf, want) != NULL);
   view_clock(WALL_MS, WALL_MS, at, sizeof(at));
@@ -743,7 +735,6 @@ static void test_watch_times(void) {
   CHECK(strstr(buf, want) != NULL);
 
   app_event ev = { 0 };
-
   write_file(path, "[1,2]");
   ev.kind = EV_TICK;
   ev.now_ms = 1000;
@@ -800,11 +791,9 @@ static void test_truncation(void) {
   if (!a) return;
 
   grid* narrow = grid_new(20, H);
-
   app_render(a, narrow);
 
   char buf[128];
-
   grid_line(narrow, TOP + 1, buf, sizeof(buf));
   ASSERT_STREQ(buf, "      name: \"a str\xe2\x80\xa6");
   ASSERT_EQ(grid_at(narrow, 18, TOP + 1).style, STYLE_STRING);

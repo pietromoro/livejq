@@ -118,7 +118,6 @@ b8 view_applies(jv v, view_id id) {
 
   jv out = view_jq(id) ? view_tree(v, id) : view_text(v, id, NULL);
   b8 applies = jv_is_valid(out);
-
   jv_free(out);
   return applies;
 }
@@ -231,16 +230,13 @@ void view_clock(i64 ms, i64 now_ms, char* buf, usz cap) {
   local_offset(now, &now_off);
 
   civil c;
-
   split(t + off, &c);
 
   civil today;
-
   split(now + now_off, &today);
 
   const char* mon = months + (c.mon - 1) * 3;
   char date[32] = "";
-
   if (c.year != today.year)
     snprintf(date, sizeof(date), "%d %.3s %" PRId64 " ", c.day, mon, c.year);
   else if (c.mon != today.mon || c.day != today.day)
@@ -390,7 +386,6 @@ static jv short_duration(f64 d) {
   f64 v = fabs(d) * 1000;
   i32 u = 0;
   i32 dec;
-
   while (v < 1 && u < 2) {
     v *= 1000;
     u++;
@@ -427,7 +422,6 @@ static jv timestamp(instant at, view_id id) {
 
   civil c;
   char frac[16] = "";
-
   split(at.sec + off, &c);
   if (c.year < 0 || c.year > 9999) return jv_invalid();
 
@@ -513,7 +507,6 @@ static instant to_instant(i64 n, time_unit unit) {
 
   if (unit != UNIT_AUTO) u = (i32)unit - 1;
   instant at = { n / per[u], n % per[u], u * 3 };
-
   if (at.frac < 0) {
     at.frac += per[u];
     at.sec--;
@@ -636,10 +629,10 @@ static b8 named_zone(const char* s, i64* off) {
 /* c, read in a zone off seconds east of UTC, as the seconds of at. False
  * when c is no real date and time. */
 static b8 from_civil(const civil* c, i64 off, instant* at) {
-  if (c->mon < 1 || c->mon > 12 || c->day < 1 || c->hour > 23 || c->min > 59 || c->sec > 60) return 0;
+  if (c->mon < 1 || c->mon > 12 || c->day < 1 || c->hour > 23 || c->min > 59 || c->sec > 60)
+    return 0;
 
   civil back;
-
   at->sec = days_of(c->year, c->mon, c->day) * DAY;
   split(at->sec, &back);
   if (back.day != c->day) return 0;
@@ -702,7 +695,6 @@ static i64 days_of(i64 y, i32 m, i32 d) {
   i64 yoe = y - era * 400;
   i64 doy = (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + d - 1;
   i64 doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-
   return era * 146097 + doe - 719468;
 }
 
@@ -777,7 +769,6 @@ static jv base64(jv v) {
   i64 n = from_base64(jv_string_value(v), len, buf);
   b8 binary = len >= MIN_BINARY && from_hex(jv_string_value(v), len, NULL) < 0;
   jv out = jv_invalid();
-
   if (n > 0 && is_text(buf, (usz)n))
     out = jv_dump_string(jv_string_sized((const char*)buf, (i32)n), 0);
   else if (n > 0 && binary) out = hex_dump(buf, (usz)n);
@@ -817,7 +808,6 @@ static jv unhex(jv v) {
   u8* buf = malloc(len / 2 + 1);
   i64 n = from_hex(jv_string_value(v), len, buf);
   jv out = jv_invalid();
-
   if (n > 0 && is_text(buf, (usz)n))
     out = jv_dump_string(jv_string_sized((const char*)buf, (i32)n), 0);
   else if (n > 0) out = hex_dump(buf, (usz)n);
@@ -900,7 +890,6 @@ static i32 base64_digit(char c, char* alphabet) {
   if (c >= '0' && c <= '9') return c - '0' + 52;
 
   char kind = c == '+' || c == '/' ? '+' : c == '-' || c == '_' ? '-' : 0;
-
   if (!kind || (*alphabet && *alphabet != kind)) return -1;
 
   *alphabet = kind;
@@ -960,14 +949,12 @@ static jv uuid(jv v) {
 
   instant at;
   char buf[48];
-
   if (!uuid_time(b, &at)) {
     snprintf(buf, sizeof(buf), "v%d", b[6] >> 4);
     return jv_string(buf);
   }
 
   jv time = timestamp(at, VIEW_UTC);
-
   snprintf(buf, sizeof(buf), "v%d %s", b[6] >> 4, jv_is_valid(time) ? jv_string_value(time) : "");
   jv_free(time);
   return jv_string(buf);
@@ -995,7 +982,6 @@ static b8 parse_uuid(jv v, u8* out) {
     }
 
     i32 d = hex_digit(s[i]);
-
     if (d < 0) return 0;
 
     out[n / 2] = (u8)(n % 2 ? out[n / 2] << 4 | d : d);
@@ -1023,7 +1009,6 @@ static b8 uuid_time(const u8* b, instant* at) {
   else return 0;
 
   i64 ticks = (i64)t - GREGORIAN;
-
   at->sec = ticks >= 0 ? ticks / 10000000 : (ticks - 9999999) / 10000000;
   at->frac = ticks - at->sec * 10000000;
   at->digits = 7;
@@ -1068,7 +1053,6 @@ static jv jwt(jv v) {
 
   jv header = jwt_part(s, (usz)(dot - s));
   jv payload = jwt_part(dot + 1, (usz)(sig - dot - 1));
-
   if (!jv_is_valid(header) || !jv_is_valid(payload)) {
     jv_free(header);
     jv_free(payload);
@@ -1107,7 +1091,6 @@ static jv query_string(jv v) {
   if (q) s = q + 1;
 
   usz len = strcspn(s, "#");
-
   for (usz i = 0; i < len; i++) {
     if ((u8)s[i] <= ' ' || s[i] == 0x7f) {
       jv_free(fields);
@@ -1148,7 +1131,6 @@ static b8 add_field(jv* fields, const char* s, usz len) {
   }
 
   jv old = jv_object_get(jv_copy(*fields), jv_copy(key));
-
   if (jv_get_kind(old) == JV_KIND_ARRAY) val = jv_array_append(old, val);
   else if (jv_is_valid(old)) val = jv_array_append(jv_array_append(jv_array(), old), val);
   else jv_free(old);
@@ -1172,7 +1154,6 @@ static jv unescape(const char* s, usz len, b8 form) {
 
     i32 hi = i + 2 < len ? hex_digit(s[i + 1]) : -1;
     i32 lo = hi >= 0 ? hex_digit(s[i + 2]) : -1;
-
     if (lo < 0) {
       free(buf);
       return jv_invalid();

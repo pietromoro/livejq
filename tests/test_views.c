@@ -187,7 +187,6 @@ static void test_clock(void) {
   tzset();
 
   char buf[32];
-
   view_clock(1730300000000, 1730303600000, buf, sizeof(buf));
   ASSERT_STREQ(buf, "15:53:20");
   view_clock(1730329200000, 1730300000000, buf, sizeof(buf));

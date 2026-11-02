@@ -57,7 +57,6 @@ void grid_box(grid* g, i32 x, i32 y, i32 w, i32 h, u8 st) {
   if (w < 2 || h < 2) return;
 
   static const char* const corners[] = { "\xe2\x95\xad", "\xe2\x95\xae", "\xe2\x95\xb0", "\xe2\x95\xaf" };
-
   for (i32 i = 1; i < w - 1; i++) {
     grid_put(g, x + i, y, x + w, H_LINE, 3, st);
     grid_put(g, x + i, y + h - 1, x + w, H_LINE, 3, st);

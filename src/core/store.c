@@ -113,7 +113,6 @@ char* store_read(const store* s, const char* name, char* err, usz errlen) {
   FILE* f = fopen(path, "rb");
   char* text = NULL;
   usz len = 0;
-
   if (f) {
     char chunk[4096];
     usz got;
@@ -162,7 +161,6 @@ b8 store_write(store* s, const char* name, const char* text, char* err, usz errl
   }
 
   char* path = path_of(s, name);
-
   if (!path) {
     snprintf(err, errlen, "%s: %s", name, strerror(ENOMEM));
     return 0;
@@ -170,7 +168,6 @@ b8 store_write(store* s, const char* name, const char* text, char* err, usz errl
 
   FILE* f = fopen(path, "wb");
   b8 ok = f != NULL;
-
   if (ok) {
     ok = fputs(text, f) >= 0 && fputc('\n', f) != EOF;
     ok = fclose(f) == 0 && ok;
@@ -192,7 +189,6 @@ b8 store_delete(store* s, const char* name, char* err, usz errlen) {
   }
 
   b8 ok = remove(path) == 0;
-
   if (!ok) fail(path, err, errlen);
 
   free(path);
@@ -218,7 +214,6 @@ static b8 list(const char* dir, entry** items, usz* n) {
 
   usz cap = 0;
   struct dirent* de;
-
   while ((de = readdir(d)) != NULL) {
     usz len = strlen(de->d_name);
 
@@ -226,7 +221,6 @@ static b8 list(const char* dir, entry** items, usz* n) {
 
     char* name = malloc(len - EXT_LEN + 1);
     entry e = { name, { 0, 0 } };
-
     if (!name) break;
 
     memcpy(name, de->d_name, len - EXT_LEN);
@@ -234,7 +228,6 @@ static b8 list(const char* dir, entry** items, usz* n) {
 
     char* path = malloc(strlen(dir) + 1 + len + 1);
     b8 keep = path && store_name_ok(name);
-
     if (keep) {
       sprintf(path, "%s/%s", dir, de->d_name);
 
@@ -315,7 +308,6 @@ static b8 is_device(const char* name) {
     if (strcmp(stem, devices[i]) == 0) return 1;
 
   b8 numbered = len == 4 && stem[3] >= '1' && stem[3] <= '9';
-
   return numbered && (strncmp(stem, "com", 3) == 0 || strncmp(stem, "lpt", 3) == 0);
 }
 

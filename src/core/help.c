@@ -153,7 +153,6 @@ void help_render(grid* g, app_focus focus, app_focus next, help_view* v) {
   if (h - 4 < 1) return;
 
   const char* footer = v->max ? SCROLL : FOOTER;
-
   grid_put_fit(g, x + 2, y + h - 2, x + w - 1, footer, strlen(footer), STYLE_HELP);
 }
 
