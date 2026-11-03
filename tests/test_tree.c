@@ -15,7 +15,7 @@
 #define TOKEN                                                                                                   \
    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1PjE_IiwiaWF0IjoxNzMwMzAwMDAwLCJleHAiOjE3MzAzMDM2MDAsIm4i"  \
    "OiJcdTAwZTgifQ.c2ln_-"
-#define W         60
+#define W         80
 #define H         16
 #define TOP       4 /* the tree's first row */
 #define LEFT      2 /* and column */
@@ -69,6 +69,9 @@ static void test_json_subtree(void);
 static void test_jwt_subtree(void);
 static void test_query_subtree(void);
 static void test_time_unit(void);
+static void test_search(void);
+static void test_search_reveals(void);
+static void test_search_values(void);
 
 static grid* screen;
 
@@ -1097,6 +1100,128 @@ static void test_time_unit(void) {
   app_free(a);
 }
 
+static void test_search(void) {
+  app* a = open_app("tests/data/sample.json", ".");
+
+  if (!a) return;
+
+  press(a, '\t');
+  type(a, "/o");
+  ASSERT_STREQ(status(a), "#0 .users[1].name");
+  CHECK(strstr(cells(a, 0, H - 1, W), "/o") != NULL);
+  CHECK(strstr(cells(a, 0, H - 1, W), "1/3") != NULL);
+
+  press(a, APP_KEY_ENTER);
+  CHECK(strstr(line(a, H - 2), "/o 1/3") != NULL);
+  press(a, 'n');
+  ASSERT_STREQ(status(a), "#0 .ok");
+  press(a, 'n');
+  ASSERT_STREQ(status(a), "#1 .second");
+  CHECK(strstr(line(a, H - 2), "/o 3/3") != NULL);
+  press(a, 'n');
+  ASSERT_STREQ(status(a), "#0 .users[1].name");
+  press(a, 'N');
+  ASSERT_STREQ(status(a), "#1 .second");
+  press(a, 'k');
+  CHECK(strstr(line(a, H - 2), "/o -/3") != NULL);
+  press(a, 'n');
+  ASSERT_STREQ(status(a), "#1 .second");
+  press(a, 'g');
+  press(a, 'N');
+  ASSERT_STREQ(status(a), "#1 .second");
+
+  press(a, 0x1b);
+  CHECK(strstr(line(a, H - 2), "/o") == NULL);
+  press(a, 'n');
+  ASSERT_STREQ(status(a), "#1 .second");
+
+  press(a, 'g');
+  type(a, "/O");
+  ASSERT_STREQ(status(a), "#0 .");
+  CHECK(strstr(cells(a, 0, H - 1, W), "no match") != NULL);
+  press(a, APP_KEY_BACKSPACE);
+  type(a, "Ok");
+  CHECK(strstr(cells(a, 0, H - 1, W), "no match") != NULL);
+  press(a, APP_KEY_BACKSPACE);
+  press(a, APP_KEY_BACKSPACE);
+  type(a, "oK");
+  CHECK(strstr(cells(a, 0, H - 1, W), "no match") != NULL);
+  press(a, 0x1b);
+  ASSERT_STREQ(status(a), "#0 .");
+  CHECK(strstr(line(a, H - 2), "no match") == NULL);
+  app_free(a);
+}
+
+static void test_search_reveals(void) {
+  app* a = open_app("tests/data/sample.json", ".");
+
+  if (!a) return;
+
+  press(a, '\t');
+  press(a, 'j');
+  press(a, 'h');
+  ASSERT_STREQ(row(a, 1), "  " CLOSED "users: [2]");
+
+  type(a, "/o");
+  ASSERT_STREQ(status(a), "#0 .users[1].name");
+  ASSERT_STREQ(row(a, 1), "  " OPEN "users: [2]");
+  type(a, "k");
+  ASSERT_STREQ(status(a), "#0 .ok");
+  ASSERT_STREQ(row(a, 1), "  " CLOSED "users: [2]");
+
+  press(a, APP_KEY_BACKSPACE);
+  ASSERT_STREQ(status(a), "#0 .users[1].name");
+  press(a, 0x1b);
+  ASSERT_STREQ(status(a), "#0 .users");
+  ASSERT_STREQ(row(a, 1), "  " CLOSED "users: [2]");
+
+  type(a, "/bob");
+  press(a, APP_KEY_ENTER);
+  ASSERT_STREQ(status(a), "#0 .users[1].name");
+  press(a, 'g');
+  press(a, 'j');
+  ASSERT_STREQ(row(a, 1), "  " OPEN "users: [2]");
+
+  press(a, 'h');
+  type(a, "/al");
+  press(a, APP_KEY_ENTER);
+  type(a, "/zz");
+  press(a, 0x1b);
+  ASSERT_STREQ(status(a), "#0 .users[0].name");
+  CHECK(strstr(line(a, H - 2), "/al 1/1") != NULL);
+  app_free(a);
+}
+
+static void test_search_values(void) {
+  app* a = open_app("tests/data/sample.json", ".");
+
+  if (!a) return;
+
+  press(a, '\t');
+  type(a, "/0300");
+  ASSERT_STREQ(status(a), "#0 .users[0].ts");
+  press(a, APP_KEY_ENTER);
+  type(a, "/tru");
+  ASSERT_STREQ(status(a), "#0 .ok");
+  press(a, APP_KEY_ENTER);
+  type(a, "/ull");
+  ASSERT_STREQ(status(a), "#1 .second");
+  press(a, APP_KEY_ENTER);
+  type(a, "/\"");
+  CHECK(strstr(cells(a, 0, H - 1, W), "no match") != NULL);
+  press(a, 0x1b);
+
+  retype(a, ".users[0]");
+  type(a, "/name");
+  ASSERT_STREQ(status(a), "#0 .name");
+  press(a, APP_KEY_ENTER);
+  retype(a, ".users");
+  CHECK(strstr(line(a, H - 2), "/name -/2") != NULL);
+  press(a, 'n');
+  ASSERT_STREQ(status(a), "#0 .[0].name");
+  app_free(a);
+}
+
 #define TESTS(f)                          \
    f(test_focus)                          \
    f(test_click_focuses)                  \
@@ -1126,7 +1251,10 @@ static void test_time_unit(void) {
    f(test_json_subtree)                   \
    f(test_jwt_subtree)                    \
    f(test_query_subtree)                  \
-   f(test_time_unit)
+   f(test_time_unit)                      \
+   f(test_search)                         \
+   f(test_search_reveals)                 \
+   f(test_search_values)
 
 #define TEST_HELPER_MAIN
 

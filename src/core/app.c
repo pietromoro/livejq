@@ -27,6 +27,7 @@
 #define WATCHING    "\xe2\x9f\xb3 "
 #define MODIFIED    "\xe2\x97\x8f"
 #define MIN_PATH    16 /* columns the path keeps before the times go, an error keeps all */
+#define MAX_PATTERN 20 /* columns the search pattern takes on the status bar */
 #define CTRL(c)     ((c) & 0x1f)
 #define ESC         0x1b
 
@@ -59,6 +60,9 @@ struct app {
   app_focus named_from; /* the focus to return to from the name row */
   b8 side_opened;       /* the name row showed the sidebar */
 
+  b8 searching;   /* the search prompt is open */
+  editor search;
+
   editor query;
   b8 edited;      /* not submitted yet */
   i64 submit_at;  /* debounce deadline */
@@ -77,6 +81,8 @@ struct app {
 static void key(app* a, app_event ev);
 static app_focus next_focus(const app* a, i32 step);
 static void tree_key(app* a, u32 key);
+static void start_search(app* a);
+static void search_key(app* a, u32 key);
 static void sidebar_enter(app* a);
 static void save(app* a);
 static void start_naming(app* a, const char* name);
@@ -98,7 +104,10 @@ static void submit(app* a);
 static b8 apply(app* a);
 static b8 failed(const app* a);
 static void render_query(app* a, grid* g);
+static void render_search(app* a, grid* g);
 static void render_status(app* a, grid* g);
+static i32 search_width(const char* pattern, const char* found);
+static i32 found_text(app* a, char* buf, usz cap);
 static void times(const app* a, char* buf, usz cap, i32 room);
 static b8 add_part(char* buf, usz cap, usz* n, const char* part, i32 room);
 static i32 segment(grid* g, i32 x, const char* s, u8 st);
@@ -168,6 +177,7 @@ void app_free(app* a) {
   jv_free(a->load_error);
   jv_free(a->store_error);
   editor_free(&a->query);
+  editor_free(&a->search);
   editor_free(&a->side.name);
   store_free(a->side.store);
   free(a->loaded);
@@ -239,7 +249,8 @@ void app_render(app* a, grid* g) {
   );
 
   render_status(a, g);
-  if (a->side.naming) help_prompt_bar(g, g->h - 1, HELP_PROMPT_NAME);
+  if (a->searching) render_search(a, g);
+  else if (a->side.naming) help_prompt_bar(g, g->h - 1, HELP_PROMPT_NAME);
   else if (a->side.deleting) help_prompt_bar(g, g->h - 1, HELP_PROMPT_DELETE);
   else help_bar(g, g->h - 1, a->focus, next_focus(a, 1));
 
@@ -261,6 +272,11 @@ static void key(app* a, app_event ev) {
 
   if (a->help) {
     a->help = help_key(&a->help_at, ev.key);
+    return;
+  }
+
+  if (a->searching) {
+    search_key(a, ev.key);
     return;
   }
 
@@ -425,8 +441,38 @@ static void tree_key(app* a, u32 key) {
     case 'u':
       tree_do(a->tree, TREE_UNIT_NEXT);
       break;
+    case '/':
+      start_search(a);
+      break;
+    case 'n':
+      tree_find(a->tree, 1);
+      break;
+    case 'N':
+      tree_find(a->tree, -1);
+      break;
+    case ESC:
+      tree_search(a->tree, "");
+      break;
     default: break;
   }
+}
+
+/* opens the prompt on the key bar; the tree follows what is typed. */
+static void start_search(app* a) {
+  a->searching = 1;
+  editor_set(&a->search, "");
+  tree_search_begin(a->tree);
+}
+
+/* enter keeps the match, esc goes back to where the search began. */
+static void search_key(app* a, u32 key) {
+  if (key == ESC || key == APP_KEY_ENTER) {
+    tree_search_end(a->tree, key == ESC);
+    a->searching = 0;
+    return;
+  }
+
+  if (edit(&a->search, key)) tree_search(a->tree, a->search.text ? a->search.text : "");
 }
 
 /* a press focuses the zone under it and picks the tree line or the saved
@@ -450,6 +496,11 @@ static b8 mouse(app* a, app_event ev) {
 
   if (a->help) {
     a->help = 0;
+    return 1;
+  }
+
+  if (a->searching) {
+    search_key(a, ESC);
     return 1;
   }
 
@@ -838,8 +889,29 @@ static void render_query(app* a, grid* g) {
   g->cursor_y = 1;
 }
 
-/* a pill, the file, then the cursor's path or the error, and the outputs
- * with their time on the right. */
+/* the pattern being typed after a slash, which match the cursor is on, and
+ * the prompt's keys on the right. */
+static void render_search(app* a, grid* g) {
+  i32 y = g->h - 1;
+  i32 keys;
+  i32 x;
+
+  if (y < 0) return;
+
+  keys = help_prompt_bar(g, y, HELP_PROMPT_SEARCH);
+  x = grid_put(g, 1, y, keys, "/", 1, STYLE_ACCENT);
+  x = editor_render(&a->search, g, x, y, keys - 12, NULL);
+  g->cursor_x = x;
+  g->cursor_y = y;
+  if (!a->search.text) return;
+
+  char found[32];
+  i32 total = found_text(a, found, sizeof(found));
+  grid_put(g, keys - 12, y, keys - 1, found, strlen(found), total ? STYLE_HELP : STYLE_ERROR);
+}
+
+/* a pill, the file, then the cursor's path or the error, the search, and the
+ * outputs with their time on the right. */
 static void render_status(app* a, grid* g) {
   i32 y = g->h - 2;
   jv err = jv_get_kind(a->error) == JV_KIND_STRING ? a->error : a->load_error;
@@ -872,6 +944,12 @@ static void render_status(app* a, grid* g) {
   const char* pill = a->missing ? " MISSING " : failed(a) ? " ERROR " : " LIVEJQ ";
   x = segment(g, 0, pill, failed(a) ? STYLE_PILL_ERROR : STYLE_PILL);
   end = g->w - utf8_columns(outputs, strlen(outputs)) - utf8_columns(time, strlen(time));
+
+  const char* pattern = a->searching ? NULL : tree_pattern(a->tree);
+  char found[32];
+  i32 total = pattern ? found_text(a, found, sizeof(found)) : 0;
+  i32 search_x = end - (pattern ? search_width(pattern, found) : 0);
+  end = search_x;
   if (end < x) end = x;
 
   b8 erred = jv_get_kind(err) == JV_KIND_STRING;
@@ -902,7 +980,41 @@ static void render_status(app* a, grid* g) {
 
   grid_put_fit(g, x + 1, y, right - 1, mid, mid_len, mid_style);
   segment(g, right, info, STYLE_STATUS);
-  segment(g, segment(g, end, outputs, STYLE_STATUS_INFO), time, STYLE_STATUS_TIME);
+  x = search_x;
+  if (pattern) {
+    u8 st = total ? STYLE_STATUS : STYLE_STATUS_ERROR;
+
+    x = segment(g, x, " /", st);
+    x = grid_put_fit(g, x, y, x + search_width(pattern, "") - 4, pattern, strlen(pattern), st);
+    x = segment(g, x, " ", st);
+    x = segment(g, x, found, st);
+    x = segment(g, x, " ", st);
+  }
+
+  segment(g, segment(g, x, outputs, STYLE_STATUS_INFO), time, STYLE_STATUS_TIME);
+}
+
+/* the columns " /pattern found " takes, the pattern cut to MAX_PATTERN. */
+static i32 search_width(const char* pattern, const char* found) {
+  i32 w = utf8_columns(pattern, strlen(pattern));
+
+  if (w > MAX_PATTERN) w = MAX_PATTERN;
+
+  return w + 4 + utf8_columns(found, strlen(found));
+}
+
+/* which match the cursor is on and of how many, "no match", or "-/n" off
+ * the matches. Returns how many. */
+static i32 found_text(app* a, char* buf, usz cap) {
+  i32 at;
+  i32 total;
+
+  tree_matches(a->tree, &at, &total);
+  if (total == 0) snprintf(buf, cap, "no match");
+  else if (at == 0) snprintf(buf, cap, "-/%d", total);
+  else snprintf(buf, cap, "%d/%d", at, total);
+
+  return total;
 }
 
 /* the watch interval, the file's modification time and when it was last

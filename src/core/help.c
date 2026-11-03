@@ -43,6 +43,8 @@ static const entry tree_keys[] = {
     { "u", "time or duration in s / ms / \xc2\xb5s / ns, then back" },
     { "0", "value as jq prints it" },
     { "a", "this view on every sibling with the same key" },
+    { "/  n N", "search keys and values, next / previous match" },
+    { "esc", "clear the search" },
     { "tab", NULL },
     { "? F1", "help" },
     { "q  ctrl-c", "quit" },
@@ -75,6 +77,7 @@ static const entry tree_bar[] = {
     { "\xe2\x86\x91\xe2\x86\x93", "move" },
     { "\xe2\x86\x90\xe2\x86\x92", "fold" },
     { "space", "toggle" },
+    { "/", "search" },
     { "tab", NULL },
     { "?", "help" },
     { "q", "quit" },
@@ -100,6 +103,11 @@ static const entry delete_bar[] = {
     { "other keys", "cancel" },
 };
 
+static const entry search_bar[] = {
+    { "enter", "keep" },
+    { "esc", "back" },
+};
+
 /* by app_focus. */
 static const struct {
   const entry* keys;
@@ -116,7 +124,8 @@ static const struct {
 /* by app_focus. */
 static const char* const zone_names[] = { "query", "tree", "saved queries" };
 
-static void bar(grid* g, i32 y, const entry* keys, usz n, app_focus next);
+static i32 bar(grid* g, i32 x, i32 y, const entry* keys, usz n, app_focus next);
+static i32 bar_width(const entry* keys, usz n);
 static const char* what_of(const entry* e, app_focus next);
 static void scrollbar(grid* g, i32 x, i32 y, const help_view* v, i32 n);
 static i32 key_rows(const help_view* v, u32 key);
@@ -193,27 +202,44 @@ b8 help_scroll(help_view* v, i32 n) {
 }
 
 void help_bar(grid* g, i32 y, app_focus focus, app_focus next) {
-  bar(g, y, zones[focus].bar, zones[focus].bar_n, next);
+  bar(g, 1, y, zones[focus].bar, zones[focus].bar_n, next);
 }
 
-void help_prompt_bar(grid* g, i32 y, help_prompt p) {
-  if (p == HELP_PROMPT_DELETE) bar(g, y, delete_bar, ARRAY_LEN(delete_bar), FOCUS_QUERY);
-  else bar(g, y, naming_bar, ARRAY_LEN(naming_bar), FOCUS_QUERY);
+i32 help_prompt_bar(grid* g, i32 y, help_prompt p) {
+  if (p == HELP_PROMPT_DELETE) return bar(g, 1, y, delete_bar, ARRAY_LEN(delete_bar), FOCUS_QUERY);
+  if (p == HELP_PROMPT_NAME) return bar(g, 1, y, naming_bar, ARRAY_LEN(naming_bar), FOCUS_QUERY);
+
+  i32 x = g->w - 1 - bar_width(search_bar, ARRAY_LEN(search_bar));
+  if (x < g->w / 2) return g->w - 1;
+
+  return bar(g, x, y, search_bar, ARRAY_LEN(search_bar), FOCUS_QUERY);
 }
 
-static void bar(grid* g, i32 y, const entry* keys, usz n, app_focus next) {
-  i32 x = 1;
+/* draws keys from x on as many as fit, and returns x. */
+static i32 bar(grid* g, i32 x, i32 y, const entry* keys, usz n, app_focus next) {
+  i32 start = x;
 
   for (usz i = 0; i < n; i++) {
     i32 sep = i ? columns(SEP) : 0;
 
     const char* what = what_of(&keys[i], next);
-    if (x + sep + columns(keys[i].keys) + 1 + columns(what) >= g->w) return;
+    if (x + sep + columns(keys[i].keys) + 1 + columns(what) >= g->w) break;
 
     if (i) x = grid_puts(g, x, y, SEP, STYLE_HELP_SEP);
     x = grid_puts(g, x, y, keys[i].keys, STYLE_HELP_KEY);
     x = grid_puts(g, x + 1, y, what, STYLE_HELP);
   }
+
+  return start;
+}
+
+static i32 bar_width(const entry* keys, usz n) {
+  i32 w = 0;
+
+  for (usz i = 0; i < n; i++)
+    w += (i ? columns(SEP) : 0) + columns(keys[i].keys) + 1 + columns(keys[i].what);
+
+  return w;
 }
 
 static const char* what_of(const entry* e, app_focus next) {

@@ -150,7 +150,7 @@ static void test_help_scrolls(void) {
   CHECK(!shows(a, "j k"));
   press(a, 'G');
   CHECK(shows(a, "quit"));
-  ASSERT_EQ(thumb_at(a), 5);
+  ASSERT_EQ(thumb_at(a), 6);
   press(a, APP_KEY_PAGE_UP);
   CHECK(!shows(a, "quit"));
   press(a, 'g');

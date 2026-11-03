@@ -38,6 +38,20 @@ typedef struct {
   b8 viewed; /* view set on this path, overriding the rule */
 } node;
 
+/* a fold a search opened, and what it was before. */
+typedef struct {
+  char* key;
+  fold was;
+} reveal;
+
+/* a pass over the values in the order of their lines. */
+typedef struct {
+  i32 count; /* matches so far */
+  i32 at;    /* matches before the cursor, -1 until it is passed */
+  b8 on;     /* the cursor is on a match */
+  i32 want;  /* the match to stop at, -1 for none */
+} search_pass;
+
 typedef struct {
   jv value;
   jv derived; /* the tree the view makes of value, invalid when none */
@@ -73,12 +87,22 @@ struct tree {
   strbuf pattern; /* its rule's key */
   i32 best;       /* deepest row on the way to cursor_key */
   usz best_len;
+
+  char* search;   /* the pattern searched for, NULL for none */
+  b8 fold_case;   /* the pattern has no uppercase letter */
+  b8 searching;   /* between tree_search_begin and tree_search_end */
+  char* origin;   /* the cursor's path when the search began */
+  char* was;      /* and the pattern */
+  reveal* reveals;
+  i32 nreveals;
+  i32 reveals_cap;
 };
 
 static void rebuild(tree* t);
 static void add_rows(tree* t, jv value, jv key, i32 parent, i32 depth);
 static void match_cursor(tree* t, i32 r);
 static b8 is_open(tree* t, const row* w);
+static b8 expands(const tree* t, i32 depth);
 static jv members(const row* w);
 static b8 has_children(jv v);
 static i32 count_rows(jv v, i32 levels, i32 budget);
@@ -100,6 +124,17 @@ static node* node_find(tree* t, const char* key);
 static node* node_at(tree* t, const char* key);
 static void fold_set(tree* t, const char* key, b8 open);
 static u32 hash(const char* s);
+static void set_pattern(tree* t, const char* pattern);
+static b8 pass(tree* t, search_pass* p);
+static b8 pass_value(tree* t, jv value, jv key, i32 depth, search_pass* p);
+static void pass_cursor(tree* t, jv value, b8 hit, search_pass* p);
+static b8 matches(tree* t, jv value, jv key);
+static b8 in_string(const tree* t, jv s);
+static b8 contains(const tree* t, const char* s, usz len);
+static void go_to(tree* t, char* key);
+static void open_ancestors(tree* t, const char* key);
+static void close_reveals(tree* t);
+static char* dup(const char* s);
 static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag, b8 dim);
 static void path_display(tree* t, i32 r, strbuf* b);
 static b8 is_ident(const char* s);
@@ -135,6 +170,11 @@ void tree_free(tree* t) {
   free(t->cursor_key);
   free(t->key.s);
   free(t->pattern.s);
+  close_reveals(t);
+  free(t->reveals);
+  free(t->search);
+  free(t->origin);
+  free(t->was);
   free(t);
 }
 
@@ -300,6 +340,77 @@ void tree_path(tree* t, char* buf, usz cap) {
   free(b.s);
 }
 
+void tree_search_begin(tree* t) {
+  tree_search_end(t, 0);
+  t->searching = 1;
+  t->origin = t->cursor_key ? dup(t->cursor_key) : NULL;
+  t->was = t->search ? dup(t->search) : NULL;
+}
+
+b8 tree_search(tree* t, const char* pattern) {
+  close_reveals(t);
+  set_pattern(t, pattern);
+  if (t->searching) {
+    free(t->cursor_key);
+    t->cursor_key = t->origin ? dup(t->origin) : NULL;
+  }
+
+  if (tree_find(t, 0)) return 1;
+
+  rebuild(t);
+  return 0;
+}
+
+void tree_search_end(tree* t, b8 back) {
+  if (!t->searching) return;
+
+  if (back) {
+    close_reveals(t);
+    set_pattern(t, t->was);
+    free(t->cursor_key);
+    t->cursor_key = t->origin;
+    t->origin = NULL;
+    rebuild(t);
+  }
+
+  for (i32 i = 0; i < t->nreveals; i++) free(t->reveals[i].key);
+
+  t->nreveals = 0;
+  t->searching = 0;
+  free(t->origin);
+  free(t->was);
+  t->origin = NULL;
+  t->was = NULL;
+}
+
+b8 tree_find(tree* t, i32 step) {
+  if (!t->search) return 0;
+
+  search_pass p = { .want = -1 };
+  pass(t, &p);
+  if (p.count == 0) return 0;
+
+  i32 at = step > 0 ? p.at + p.on : step < 0 ? p.at - 1 : p.at;
+  p.want = (at + p.count) % p.count;
+  pass(t, &p);
+  go_to(t, dup(t->key.s));
+  return 1;
+}
+
+const char* tree_pattern(const tree* t) { return t->search; }
+
+void tree_matches(tree* t, i32* at, i32* total) {
+  search_pass p = { .want = -1 };
+
+  *at = 0;
+  *total = 0;
+  if (!t->search) return;
+
+  pass(t, &p);
+  *at = p.on ? p.at + 1 : 0;
+  *total = p.count;
+}
+
 static void rebuild(tree* t) {
   for (i32 i = 0; i < t->nrows; i++) {
     jv_free(t->rows[i].value);
@@ -376,7 +487,12 @@ static b8 is_open(tree* t, const row* w) {
   fold f = node_find(t, t->key.s)->fold;
   if (f != FOLD_NONE) return f == FOLD_OPEN;
 
-  return jv_is_valid(w->derived) || t->mode == EXPAND_ALL || (t->mode == EXPAND_ROOTS && w->depth == 0);
+  return jv_is_valid(w->derived) || expands(t, w->depth);
+}
+
+/* whether the mode opens a container at depth with no fold of its own. */
+static b8 expands(const tree* t, i32 depth) {
+  return t->mode == EXPAND_ALL || (t->mode == EXPAND_ROOTS && depth == 0);
 }
 
 /* the value whose members row w lists, borrowed: the tree its view
@@ -705,6 +821,199 @@ static u32 hash(const char* s) {
   while (*s) h = (h ^ (u8)*s++) * 16777619u;
 
   return h;
+}
+
+static void set_pattern(tree* t, const char* pattern) {
+  char* s = pattern && *pattern ? dup(pattern) : NULL;
+
+  free(t->search);
+  t->search = s;
+  t->fold_case = 1;
+  for (; s && *s; s++)
+    if (*s >= 'A' && *s <= 'Z') t->fold_case = 0;
+}
+
+/* counts the matches, and where the cursor is among them, or stops at match
+ * p->want with its path in t->key. */
+static b8 pass(tree* t, search_pass* p) {
+  p->count = 0;
+  p->at = -1;
+  p->on = 0;
+  for (i32 i = 0; i < t->nroots; i++) {
+    sb_cut(&t->key, 0);
+
+    char num[24];
+    snprintf(num, sizeof(num), "#%d", i);
+    sb_add(&t->key, num, strlen(num));
+    if (pass_value(t, jv_array_get(jv_copy(t->roots), i), jv_number(i), 0, p)) return 1;
+  }
+
+  if (p->at < 0) p->at = p->count;
+
+  return 0;
+}
+
+static b8 pass_value(tree* t, jv value, jv key, i32 depth, search_pass* p) {
+  usz mark = t->key.len;
+  b8 found = 0;
+
+  key_segment(&t->key, key, depth);
+
+  b8 hit = matches(t, value, key);
+  pass_cursor(t, value, hit, p);
+  jv_free(key);
+  if (hit && p->count++ == p->want) {
+    jv_free(value);
+    return 1;
+  }
+
+  if (jv_get_kind(value) == JV_KIND_ARRAY) {
+    jv_array_foreach(value, i, item) {
+      found = pass_value(t, item, jv_number(i), depth + 1, p);
+      if (found) break;
+    }
+  } else if (jv_get_kind(value) == JV_KIND_OBJECT) {
+    jv_object_foreach(value, k, item) {
+      found = pass_value(t, item, k, depth + 1, p);
+      if (found) break;
+    }
+  }
+
+  jv_free(value);
+  if (!found) sb_cut(&t->key, mark);
+
+  return found;
+}
+
+/* notes where the cursor is when the value at t->key holds it: on it, or on
+ * a line its view derived, which comes after it. */
+static void pass_cursor(tree* t, jv value, b8 hit, search_pass* p) {
+  const char* want = t->cursor_key;
+  usz len = t->key.len;
+
+  if (p->at >= 0 || !want || strncmp(want, t->key.s, len) != 0) return;
+
+  if (want[len] == '\0') {
+    p->at = p->count;
+    p->on = hit;
+  } else if (!has_children(value) && (want[len] == '.' || want[len] == '[')) {
+    p->at = p->count + hit;
+  }
+}
+
+static b8 matches(tree* t, jv value, jv key) {
+  if (jv_get_kind(key) == JV_KIND_STRING && in_string(t, key)) return 1;
+
+  switch (jv_get_kind(value)) {
+    case JV_KIND_STRING: return in_string(t, value);
+    case JV_KIND_ARRAY:
+    case JV_KIND_OBJECT:
+    case JV_KIND_INVALID: return 0;
+    default: break;
+  }
+
+  jv text = jv_dump_string(jv_copy(value), 0);
+  b8 hit = contains(t, jv_string_value(text), strlen(jv_string_value(text)));
+  jv_free(text);
+  return hit;
+}
+
+/* whether the borrowed string s holds the pattern. */
+static b8 in_string(const tree* t, jv s) {
+  usz len = (usz)jv_string_length_bytes(jv_copy(s));
+
+  return contains(t, jv_string_value(s), len);
+}
+
+static b8 contains(const tree* t, const char* s, usz len) {
+  usz n = strlen(t->search);
+
+  for (usz i = 0; i + n <= len; i++) {
+    usz j = 0;
+
+    while (j < n) {
+      char c = s[i + j];
+
+      if (t->fold_case && c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+      if (c != t->search[j]) break;
+
+      j++;
+    }
+
+    if (j == n) return 1;
+  }
+
+  return 0;
+}
+
+/* moves the cursor to the path in key, which it takes, opening the folds on
+ * the way. */
+static void go_to(tree* t, char* key) {
+  open_ancestors(t, key);
+  free(t->cursor_key);
+  t->cursor_key = key;
+  rebuild(t);
+}
+
+/* opens the containers around the path in key that show folded, noting them
+ * during a search so that the next pattern can fold them again. */
+static void open_ancestors(tree* t, const char* key) {
+  b8 quoted = 0;
+  i32 depth = 0;
+
+  for (usz i = 1; key[i]; i++) {
+    if (quoted && key[i] == '\\') {
+      i++;
+      continue;
+    }
+
+    if (key[i] == '"') quoted = !quoted;
+    if (quoted || (key[i] != '.' && key[i] != '[')) continue;
+
+    char* prefix = malloc(i + 1);
+    if (!prefix) abort();
+
+    memcpy(prefix, key, i);
+    prefix[i] = '\0';
+
+    fold before = node_find(t, prefix)->fold;
+    b8 open = before == FOLD_OPEN || (before == FOLD_NONE && expands(t, depth));
+    depth++;
+    if (open || !t->searching) {
+      if (!open) fold_set(t, prefix, 1);
+
+      free(prefix);
+      continue;
+    }
+
+    fold_set(t, prefix, 1);
+    if (t->nreveals == t->reveals_cap) {
+      t->reveals_cap = t->reveals_cap ? t->reveals_cap * 2 : 8;
+      t->reveals = realloc(t->reveals, sizeof(reveal) * (usz)t->reveals_cap);
+      if (!t->reveals) abort();
+    }
+
+    t->reveals[t->nreveals++] = (reveal){ prefix, before };
+  }
+}
+
+/* folds again what the search opened, last first. */
+static void close_reveals(tree* t) {
+  while (t->nreveals > 0) {
+    reveal* r = &t->reveals[--t->nreveals];
+
+    node_at(t, r->key)->fold = r->was;
+    free(r->key);
+  }
+}
+
+static char* dup(const char* s) {
+  char* d = malloc(strlen(s) + 1);
+
+  if (!d) abort();
+
+  strcpy(d, s);
+  return d;
 }
 
 static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag, b8 dim) {

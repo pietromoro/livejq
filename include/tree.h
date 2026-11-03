@@ -54,5 +54,25 @@ b8 tree_click(tree* t, i32 x, i32 n, b8 again);
 void tree_render(tree* t, grid* g, i32 x, i32 y, i32 max_x, i32 h, b8 dim, b8 focused);
 /* The cursor's path as jq writes it, "" when there are no lines. */
 void tree_path(tree* t, char* buf, usz cap);
+/* Opens a search at the cursor: until tree_search_end, each tree_search
+ * starts over from there, closing the folds the previous one opened. */
+void tree_search_begin(tree* t);
+/* Searches for pattern, "" for none, in member names and scalar values as
+ * jq prints them, strings without quotes, ignoring case unless the pattern
+ * has an uppercase letter. Moves to the first match at or after the cursor,
+ * unfolding its way there. False when nothing matches. */
+b8 tree_search(tree* t, const char* pattern);
+/* Closes the search, keeping where it led, or with back putting the
+ * cursor, the folds and the pattern back as tree_search_begin found them. */
+void tree_search_end(tree* t, b8 back);
+/* Moves to the next match after the cursor, or the one before it when step
+ * is negative, wrapping around and unfolding its way. False when nothing
+ * matches. */
+b8 tree_find(tree* t, i32 step);
+/* The pattern searched for, NULL for none. */
+const char* tree_pattern(const tree* t);
+/* The match the cursor is on, from 1, or 0 when it is on none, and how many
+ * there are. */
+void tree_matches(tree* t, i32* at, i32* total);
 
 #endif /* LIVEJQ_TREE_H */
