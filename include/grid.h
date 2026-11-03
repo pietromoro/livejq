@@ -38,6 +38,7 @@ typedef enum {
   STYLE_OPERATOR,
   STYLE_FORMAT,
   STYLE_COMMENT,
+  STYLE_MATCH,     /* text the tree's search found */
   STYLE_COUNT,
   STYLE_SELECTED = 0x80,      /* or'ed onto a style on the cursor's line */
   STYLE_SELECTED_IDLE = 0x40, /* the same, while the tree has no focus */
@@ -62,6 +63,9 @@ void grid_clear(grid* g);
 void grid_fill(grid* g, i32 y, u8 st);
 /* Fills row y from column x up to max_x with blanks in style st. */
 void grid_fill_span(grid* g, i32 x, i32 max_x, i32 y, u8 st);
+/* Sets the style of row y from column x up to max_x to st, keeping the
+ * text. */
+void grid_restyle(grid* g, i32 x, i32 max_x, i32 y, u8 st);
 /* Draws a box with rounded corners, its inside left untouched. */
 void grid_box(grid* g, i32 x, i32 y, i32 w, i32 h, u8 st);
 /* Writes UTF-8 text from column x, clipped at max_x. Returns the column after

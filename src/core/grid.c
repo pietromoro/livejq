@@ -53,6 +53,14 @@ void grid_fill_span(grid* g, i32 x, i32 max_x, i32 y, u8 st) {
   }
 }
 
+void grid_restyle(grid* g, i32 x, i32 max_x, i32 y, u8 st) {
+  if (y < 0 || y >= g->h) return;
+
+  if (x < 0) x = 0;
+  if (max_x > g->w) max_x = g->w;
+  for (; x < max_x; x++) g->cells[y * g->w + x].style = st;
+}
+
 void grid_box(grid* g, i32 x, i32 y, i32 w, i32 h, u8 st) {
   if (w < 2 || h < 2) return;
 

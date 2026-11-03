@@ -130,12 +130,14 @@ static b8 pass_value(tree* t, jv value, jv key, i32 depth, search_pass* p);
 static void pass_cursor(tree* t, jv value, b8 hit, search_pass* p);
 static b8 matches(tree* t, jv value, jv key);
 static b8 in_string(const tree* t, jv s);
-static b8 contains(const tree* t, const char* s, usz len);
+static i64 find(const tree* t, const char* s, usz len);
 static void go_to(tree* t, char* key);
 static void open_ancestors(tree* t, const char* key);
 static void close_reveals(tree* t);
 static char* dup(const char* s);
 static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag, b8 dim);
+static void mark_matches(tree* t, grid* g, i32 x, i32 y, i32 end, const char* s, usz len, u8 flag);
+static b8 derived_row(tree* t, i32 r);
 static void path_display(tree* t, i32 r, strbuf* b);
 static b8 is_ident(const char* s);
 static u8 kind_style(jv v);
@@ -913,7 +915,7 @@ static b8 matches(tree* t, jv value, jv key) {
   }
 
   jv text = jv_dump_string(jv_copy(value), 0);
-  b8 hit = contains(t, jv_string_value(text), strlen(jv_string_value(text)));
+  b8 hit = find(t, jv_string_value(text), strlen(jv_string_value(text))) >= 0;
   jv_free(text);
   return hit;
 }
@@ -922,10 +924,11 @@ static b8 matches(tree* t, jv value, jv key) {
 static b8 in_string(const tree* t, jv s) {
   usz len = (usz)jv_string_length_bytes(jv_copy(s));
 
-  return contains(t, jv_string_value(s), len);
+  return find(t, jv_string_value(s), len) >= 0;
 }
 
-static b8 contains(const tree* t, const char* s, usz len) {
+/* where the pattern starts in the len bytes of s, -1 when it is not there. */
+static i64 find(const tree* t, const char* s, usz len) {
   usz n = strlen(t->search);
 
   for (usz i = 0; i + n <= len; i++) {
@@ -940,10 +943,10 @@ static b8 contains(const tree* t, const char* s, usz len) {
       j++;
     }
 
-    if (j == n) return 1;
+    if (j == n) return (i64)i;
   }
 
-  return 0;
+  return -1;
 }
 
 /* moves the cursor to the path in key, which it takes, opening the folds on
@@ -1026,6 +1029,7 @@ static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag
   char tag[16];
   i32 tag_w;
   jv text;
+  b8 marks = t->search && !dim && !derived_row(t, r);
 
   x += w->depth * 2;
   if (has_children(items)) grid_put(g, x, y, max_x, w->open ? MARK_OPEN : MARK_CLOSED, 4, punct);
@@ -1036,8 +1040,11 @@ static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag
     x = grid_put_fit(g, x, y, max_x, buf, strlen(buf), (dim ? STYLE_DIM : STYLE_LABEL) | flag);
   } else if (w->parent >= 0 && jv_get_kind(w->key) == JV_KIND_STRING) {
     const char* k = jv_string_value(w->key);
+    usz len = (usz)jv_string_length_bytes(jv_copy(w->key));
+    i32 at = x;
 
-    x = grid_put_fit(g, x, y, max_x, k, strlen(k), (dim ? STYLE_DIM : STYLE_KEY) | flag);
+    x = grid_put_fit(g, x, y, max_x, k, len, (dim ? STYLE_DIM : STYLE_KEY) | flag);
+    if (marks) mark_matches(t, g, at, y, x, k, len, flag);
     x = grid_put_fit(g, x, y, max_x, ": ", 2, punct);
   } else if (w->parent >= 0) {
     snprintf(buf, sizeof(buf), "%d: ", (i32)jv_number_value(w->key));
@@ -1078,6 +1085,8 @@ static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag
   }
 
   tag_w = tag[0] ? utf8_columns(tag, strlen(tag)) + 2 : 0;
+
+  i32 at = x;
   x = grid_put_fit(
     g,
     x,
@@ -1087,8 +1096,44 @@ static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag
     (usz)jv_string_length_bytes(jv_copy(text)),
     (dim ? STYLE_DIM : kind_style(w->value)) | flag
   );
+  if (marks && !tag[0]) {
+    b8 quoted = jv_get_kind(w->value) == JV_KIND_STRING;
+    usz len = (usz)jv_string_length_bytes(jv_copy(text));
+
+    mark_matches(t, g, at + quoted, y, x, jv_string_value(text) + quoted, len - 2 * quoted, flag);
+  }
+
   jv_free(text);
   if (tag_w) grid_put(g, x + 2, y, max_x, tag, strlen(tag), STYLE_EMPTY | flag);
+}
+
+/* restyles the cells showing the pattern in the len bytes of s, drawn from
+ * column x up to end, the ellipsis left alone when s did not fit. */
+static void mark_matches(tree* t, grid* g, i32 x, i32 y, i32 end, const char* s, usz len, u8 flag) {
+  usz n = strlen(t->search);
+  usz i = 0;
+  i64 at;
+
+  if (x + utf8_columns(s, len) > end) end--;
+
+  while ((at = find(t, s + i, len - i)) >= 0) {
+    i += (usz)at;
+
+    i32 from = x + utf8_columns(s, i);
+    i32 to = from + utf8_columns(s + i, n);
+    if (from >= end) return;
+
+    grid_restyle(g, from, to < end ? to : end, y, STYLE_MATCH | flag);
+    i += n;
+  }
+}
+
+/* whether row r lies in a tree a view derived. */
+static b8 derived_row(tree* t, i32 r) {
+  for (i32 p = t->rows[r].parent; p >= 0; p = t->rows[p].parent)
+    if (jv_is_valid(t->rows[p].derived)) return 1;
+
+  return 0;
 }
 
 /* the path of row r as jq writes it, after "#n " if there are more roots,

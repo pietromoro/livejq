@@ -149,6 +149,7 @@ static void init_colors(void) {
       { STYLE_OPERATOR, COLOR_YELLOW, -1, COLOR_YELLOW, -1, 0 },
       { STYLE_FORMAT, COLOR_MAGENTA, -1, COLOR_MAGENTA, -1, A_BOLD },
       { STYLE_COMMENT, 8, -1, 8, -1, A_DIM },
+      { STYLE_MATCH, 235, 214, COLOR_BLACK, COLOR_YELLOW, A_BOLD | A_REVERSE },
   };
   const char* no_color = getenv("NO_COLOR");
   b8 rich;

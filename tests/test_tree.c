@@ -40,6 +40,7 @@ static const char* row(app* a, i32 n);
 static const char* query(app* a);
 static const char* status(app* a);
 static b8 selected(app* a, i32 n);
+static u8 style_at(app* a, i32 x, i32 n);
 static void test_focus(void);
 static void test_click_focuses(void);
 static void test_click_picks_lines(void);
@@ -72,6 +73,7 @@ static void test_time_unit(void);
 static void test_search(void);
 static void test_search_reveals(void);
 static void test_search_values(void);
+static void test_search_marks(void);
 
 static grid* screen;
 
@@ -215,6 +217,13 @@ static const char* status(app* a) {
 static b8 selected(app* a, i32 n) {
   line(a, TOP + n);
   return (grid_at(screen, LEFT - 1, TOP + n).style & STYLE_SELECTED) != 0;
+}
+
+/* the style of column x of line n of the tree's view, without the cursor's
+ * flags. */
+static u8 style_at(app* a, i32 x, i32 n) {
+  line(a, TOP + n);
+  return grid_at(screen, LEFT + x, TOP + n).style & ~(STYLE_SELECTED | STYLE_SELECTED_IDLE);
 }
 
 static void test_focus(void) {
@@ -1222,6 +1231,45 @@ static void test_search_values(void) {
   app_free(a);
 }
 
+static void test_search_marks(void) {
+  app* a = open_app("tests/data/sample.json", ".");
+
+  if (!a) return;
+
+  press(a, '\t');
+  type(a, "/am");
+  ASSERT_STREQ(row(a, 4), "        name: \"alice\"");
+  ASSERT_EQ(style_at(a, 8, 4), STYLE_KEY);
+  ASSERT_EQ(style_at(a, 9, 4), STYLE_MATCH);
+  ASSERT_EQ(style_at(a, 10, 4), STYLE_MATCH);
+  ASSERT_EQ(style_at(a, 11, 4), STYLE_KEY);
+  ASSERT_EQ(style_at(a, 9, 8), STYLE_MATCH);
+
+  press(a, APP_KEY_BACKSPACE);
+  press(a, APP_KEY_BACKSPACE);
+  type(a, "b");
+  press(a, APP_KEY_ENTER);
+  ASSERT_STREQ(row(a, 8), "        name: \"bob\"");
+  ASSERT_EQ(style_at(a, 14, 8), STYLE_STRING);
+  ASSERT_EQ(style_at(a, 15, 8), STYLE_MATCH);
+  ASSERT_EQ(style_at(a, 16, 8), STYLE_STRING);
+  ASSERT_EQ(style_at(a, 17, 8), STYLE_MATCH);
+  ASSERT_EQ(style_at(a, 18, 8), STYLE_STRING);
+  CHECK(selected(a, 8));
+
+  type(a, "/0300");
+  press(a, APP_KEY_ENTER);
+  ASSERT_STREQ(row(a, 5), "        ts: 1730300000");
+  ASSERT_EQ(style_at(a, 15, 5), STYLE_MATCH);
+  press(a, 'x');
+  ASSERT_EQ(style_at(a, 15, 5), STYLE_NUMBER);
+  press(a, 'x');
+
+  press(a, 0x1b);
+  ASSERT_EQ(style_at(a, 15, 8), STYLE_STRING);
+  app_free(a);
+}
+
 #define TESTS(f)                          \
    f(test_focus)                          \
    f(test_click_focuses)                  \
@@ -1254,7 +1302,8 @@ static void test_search_values(void) {
    f(test_time_unit)                      \
    f(test_search)                         \
    f(test_search_reveals)                 \
-   f(test_search_values)
+   f(test_search_values)                  \
+   f(test_search_marks)
 
 #define TEST_HELPER_MAIN
 
