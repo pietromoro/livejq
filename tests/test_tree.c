@@ -77,6 +77,7 @@ static void test_search_reveals(void);
 static void test_search_values(void);
 static void test_search_marks(void);
 static void test_copy_value(void);
+static void test_copy_path(void);
 
 static grid* screen;
 
@@ -1309,6 +1310,33 @@ static void test_copy_value(void) {
   app_free(a);
 }
 
+static void test_copy_path(void) {
+  app* a = open_app("tests/data/sample.json", ".");
+
+  if (!a) return;
+
+  press(a, '\t');
+  press(a, 'Y');
+  CHECK(copied(a, "."));
+  type(a, "jjjj");
+  press(a, 'Y');
+  CHECK(copied(a, ".users[0].name"));
+  CHECK(strstr(line(a, H - 2), "copied 14 B") != NULL);
+  press(a, 'G');
+  press(a, 'Y');
+  CHECK(copied(a, ".second"));
+
+  retype(a, "select(.ok) | {p: ({a: 1} | tojson), \"a b\": [2]}");
+  type(a, "jd");
+  press(a, 'j');
+  press(a, 'Y');
+  CHECK(copied(a, ".p | fromjson | .a"));
+  type(a, "jj");
+  press(a, 'Y');
+  CHECK(copied(a, ".\"a b\"[0]"));
+  app_free(a);
+}
+
 #define TESTS(f)                          \
    f(test_focus)                          \
    f(test_click_focuses)                  \
@@ -1343,7 +1371,8 @@ static void test_copy_value(void) {
    f(test_search_reveals)                 \
    f(test_search_values)                  \
    f(test_search_marks)                   \
-   f(test_copy_value)
+   f(test_copy_value)                     \
+   f(test_copy_path)
 
 #define TEST_HELPER_MAIN
 

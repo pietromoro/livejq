@@ -86,6 +86,7 @@ static app_focus next_focus(const app* a, i32 step);
 static void tree_key(app* a, u32 key);
 static void start_search(app* a);
 static void copy_value(app* a);
+static void copy_path(app* a);
 static void copy(app* a, const char* s, usz len);
 static void search_key(app* a, u32 key);
 static void sidebar_enter(app* a);
@@ -470,6 +471,9 @@ static void tree_key(app* a, u32 key) {
     case 'y':
       copy_value(a);
       break;
+    case 'Y':
+      copy_path(a);
+      break;
     default: break;
   }
 }
@@ -504,6 +508,15 @@ static void copy_value(app* a) {
   jv text = jv_dump_string(v, JV_PRINT_INDENT_FLAGS(2));
   copy(a, jv_string_value(text), (usz)jv_string_length_bytes(jv_copy(text)));
   jv_free(text);
+}
+
+static void copy_path(app* a) {
+  char* path = tree_jq_path(a->tree);
+
+  if (!path) return;
+
+  copy(a, path, strlen(path));
+  free(path);
 }
 
 /* hands the len bytes of s to the front-end for the clipboard, and says

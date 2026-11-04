@@ -56,6 +56,9 @@ void tree_render(tree* t, grid* g, i32 x, i32 y, i32 max_x, i32 h, b8 dim, b8 fo
 jv tree_value(const tree* t);
 /* The cursor's path as jq writes it, "" when there are no lines. */
 void tree_path(tree* t, char* buf, usz cap);
+/* The cursor's path as jq writes it, without the "#n " of its output, for
+ * the caller to free. NULL when there are no lines. */
+char* tree_jq_path(tree* t);
 /* Opens a search at the cursor: until tree_search_end, each tree_search
  * starts over from there, closing the folds the previous one opened. */
 void tree_search_begin(tree* t);

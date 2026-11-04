@@ -138,7 +138,7 @@ static char* dup(const char* s);
 static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag, b8 dim);
 static void mark_matches(tree* t, grid* g, i32 x, i32 y, i32 end, const char* s, usz len, u8 flag);
 static b8 derived_row(tree* t, i32 r);
-static void path_display(tree* t, i32 r, strbuf* b);
+static void path_display(tree* t, i32 r, b8 label, strbuf* b);
 static b8 is_ident(const char* s);
 static u8 kind_style(jv v);
 static void sb_reserve(strbuf* b, usz more);
@@ -341,11 +341,21 @@ void tree_path(tree* t, char* buf, usz cap) {
   if (t->nrows == 0) return;
 
   strbuf b = { 0 };
-  path_display(t, t->cursor, &b);
+  path_display(t, t->cursor, 1, &b);
   if (t->rows[t->cursor].parent < 0) sb_add(&b, ".", 1);
 
   snprintf(buf, cap, "%s", b.s);
   free(b.s);
+}
+
+char* tree_jq_path(tree* t) {
+  if (t->nrows == 0) return NULL;
+
+  strbuf b = { 0 };
+  path_display(t, t->cursor, 0, &b);
+  if (t->rows[t->cursor].parent < 0) sb_add(&b, ".", 1);
+
+  return b.s;
 }
 
 void tree_search_begin(tree* t) {
@@ -1142,22 +1152,23 @@ static b8 derived_row(tree* t, i32 r) {
   return 0;
 }
 
-/* the path of row r as jq writes it, after "#n " if there are more roots,
- * piped through the filter of each view that derived a tree on the way. */
-static void path_display(tree* t, i32 r, strbuf* b) {
+/* the path of row r as jq writes it, after "#n " if label is set and there
+ * are more roots, piped through the filter of each view that derived a tree
+ * on the way. */
+static void path_display(tree* t, i32 r, b8 label, strbuf* b) {
   row* w = &t->rows[r];
   char num[24];
 
   if (w->parent < 0) {
     sb_cut(b, 0);
-    if (t->nroots < 2) return;
+    if (!label || t->nroots < 2) return;
 
     snprintf(num, sizeof(num), "#%d ", (i32)jv_number_value(w->key));
     sb_add(b, num, strlen(num));
     return;
   }
 
-  path_display(t, w->parent, b);
+  path_display(t, w->parent, label, b);
 
   const row* p = &t->rows[w->parent];
   b8 first = p->parent < 0;
