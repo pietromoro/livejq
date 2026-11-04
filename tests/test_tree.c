@@ -78,6 +78,7 @@ static void test_search_values(void);
 static void test_search_marks(void);
 static void test_copy_value(void);
 static void test_copy_path(void);
+static void test_pipe_path(void);
 
 static grid* screen;
 
@@ -1346,6 +1347,33 @@ static void test_copy_path(void) {
   app_free(a);
 }
 
+static void test_pipe_path(void) {
+  app* a = open_app("tests/data/sample.json", ".");
+
+  if (!a) return;
+
+  press(a, '\t');
+  type(a, "jjjj");
+  press(a, 'p');
+  CHECK(app_settle(a, SETTLE_MS));
+  CHECK(strcmp(query(a), ".users[0].name") == 0);
+  ASSERT_STREQ(row(a, 0), "  #0 \"alice\"");
+  press(a, 'p');
+  CHECK(strcmp(query(a), ".users[0].name") == 0);
+
+  retype(a, " .users ");
+  press(a, 'j');
+  press(a, 'p');
+  CHECK(app_settle(a, SETTLE_MS));
+  CHECK(strcmp(query(a), " .users | .[0]") == 0);
+
+  retype(a, " . ");
+  type(a, "jj");
+  press(a, 'p');
+  CHECK(strcmp(query(a), ".users[0]") == 0);
+  app_free(a);
+}
+
 #define TESTS(f)                          \
    f(test_focus)                          \
    f(test_click_focuses)                  \
@@ -1381,7 +1409,8 @@ static void test_copy_path(void) {
    f(test_search_values)                  \
    f(test_search_marks)                   \
    f(test_copy_value)                     \
-   f(test_copy_path)
+   f(test_copy_path)                      \
+   f(test_pipe_path)
 
 #define TEST_HELPER_MAIN
 

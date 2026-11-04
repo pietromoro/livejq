@@ -87,6 +87,7 @@ static void tree_key(app* a, u32 key);
 static void start_search(app* a);
 static void copy_value(app* a, b8 raw);
 static void copy_path(app* a);
+static void pipe_path(app* a);
 static void copy(app* a, const char* s, usz len);
 static void search_key(app* a, u32 key);
 static void sidebar_enter(app* a);
@@ -475,6 +476,9 @@ static void tree_key(app* a, u32 key) {
     case 'Y':
       copy_path(a);
       break;
+    case 'p':
+      pipe_path(a);
+      break;
     default: break;
   }
 }
@@ -520,6 +524,35 @@ static void copy_path(app* a) {
 
   copy(a, path, strlen(path));
   free(path);
+}
+
+/* pipes the query into the cursor's path, or replaces a bare "." with it,
+ * and runs it at once. */
+static void pipe_path(app* a) {
+  char* path = tree_jq_path(a->tree);
+
+  if (!path || strcmp(path, ".") == 0) {
+    free(path);
+    return;
+  }
+
+  const char* q = a->query.text ? a->query.text : "";
+  usz start = strspn(q, " \t");
+  usz end = strlen(q);
+  while (end > start && (q[end - 1] == ' ' || q[end - 1] == '\t')) end--;
+
+  b8 bare = end == start || (end - start == 1 && q[start] == '.');
+  usz cap = end + strlen(path) + 4;
+  char* text = malloc(cap);
+  if (!text) abort();
+
+  if (bare) snprintf(text, cap, "%s", path);
+  else snprintf(text, cap, "%.*s | %s", (i32)end, q, path);
+
+  editor_set(&a->query, text);
+  free(text);
+  free(path);
+  submit(a);
 }
 
 /* hands the len bytes of s to the front-end for the clipboard, and says
