@@ -1307,6 +1307,15 @@ static void test_copy_value(void) {
   retype(a, "1.000");
   press(a, 'y');
   CHECK(copied(a, "1.000"));
+  press(a, 'r');
+  CHECK(copied(a, "1.000"));
+
+  retype(a, "\"a\\\"b\\n\"");
+  press(a, 'y');
+  CHECK(copied(a, "\"a\\\"b\\n\""));
+  press(a, 'r');
+  CHECK(copied(a, "a\"b\n"));
+  CHECK(strstr(line(a, H - 2), "copied 4 B") != NULL);
   app_free(a);
 }
 

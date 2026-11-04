@@ -44,7 +44,7 @@ static const entry tree_keys[] = {
     { "0", "value as jq prints it" },
     { "a", "this view on every sibling with the same key" },
     { "/  n N  esc", "search keys and values, next / previous, clear" },
-    { "y Y", "copy the value as json / its path" },
+    { "y Y r", "copy the value as json / its path / raw" },
     { "tab", NULL },
     { "? F1", "help" },
     { "q  ctrl-c", "quit" },

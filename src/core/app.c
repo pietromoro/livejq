@@ -85,7 +85,7 @@ static void key(app* a, app_event ev);
 static app_focus next_focus(const app* a, i32 step);
 static void tree_key(app* a, u32 key);
 static void start_search(app* a);
-static void copy_value(app* a);
+static void copy_value(app* a, b8 raw);
 static void copy_path(app* a);
 static void copy(app* a, const char* s, usz len);
 static void search_key(app* a, u32 key);
@@ -469,7 +469,8 @@ static void tree_key(app* a, u32 key) {
       tree_search(a->tree, "");
       break;
     case 'y':
-      copy_value(a);
+    case 'r':
+      copy_value(a, key == 'r');
       break;
     case 'Y':
       copy_path(a);
@@ -496,8 +497,9 @@ static void search_key(app* a, u32 key) {
   if (edit(&a->search, key)) tree_search(a->tree, a->search.text ? a->search.text : "");
 }
 
-/* puts the cursor's value on the clipboard as jq prints it. */
-static void copy_value(app* a) {
+/* puts the cursor's value on the clipboard as jq prints it, or with raw a
+ * string's text as it is, like jq -r. */
+static void copy_value(app* a, b8 raw) {
   jv v = tree_value(a->tree);
 
   if (!jv_is_valid(v)) {
@@ -505,7 +507,8 @@ static void copy_value(app* a) {
     return;
   }
 
-  jv text = jv_dump_string(v, JV_PRINT_INDENT_FLAGS(2));
+  b8 text_only = raw && jv_get_kind(v) == JV_KIND_STRING;
+  jv text = text_only ? v : jv_dump_string(v, JV_PRINT_INDENT_FLAGS(2));
   copy(a, jv_string_value(text), (usz)jv_string_length_bytes(jv_copy(text)));
   jv_free(text);
 }
