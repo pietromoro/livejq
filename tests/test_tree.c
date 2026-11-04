@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "app.h"
+#include "clip.h"
 #include "defines.h"
 #include "loader.h"
 #include "thread.h"
@@ -41,6 +42,7 @@ static const char* query(app* a);
 static const char* status(app* a);
 static b8 selected(app* a, i32 n);
 static u8 style_at(app* a, i32 x, i32 n);
+static b8 copied(app* a, const char* text);
 static void test_focus(void);
 static void test_click_focuses(void);
 static void test_click_picks_lines(void);
@@ -74,6 +76,7 @@ static void test_search(void);
 static void test_search_reveals(void);
 static void test_search_values(void);
 static void test_search_marks(void);
+static void test_copy_value(void);
 
 static grid* screen;
 
@@ -224,6 +227,17 @@ static b8 selected(app* a, i32 n) {
 static u8 style_at(app* a, i32 x, i32 n) {
   line(a, TOP + n);
   return grid_at(screen, LEFT + x, TOP + n).style & ~(STYLE_SELECTED | STYLE_SELECTED_IDLE);
+}
+
+/* whether the last key put text on the clipboard. */
+static b8 copied(app* a, const char* text) {
+  char* osc = app_take_clipboard(a);
+  char* want = clip_osc52(text, strlen(text));
+  b8 same = osc && strcmp(osc, want) == 0;
+
+  free(osc);
+  free(want);
+  return same;
 }
 
 static void test_focus(void) {
@@ -1270,6 +1284,31 @@ static void test_search_marks(void) {
   app_free(a);
 }
 
+static void test_copy_value(void) {
+  app* a = open_app("tests/data/sample.json", ".");
+
+  if (!a) return;
+
+  press(a, '\t');
+  type(a, "jjjj");
+  press(a, 'y');
+  CHECK(copied(a, "\"alice\""));
+  CHECK(strstr(line(a, H - 2), "copied 7 B") != NULL);
+  CHECK(app_take_clipboard(a) == NULL);
+
+  press(a, 'k');
+  CHECK(strstr(line(a, H - 2), "copied") == NULL);
+  CHECK(app_take_clipboard(a) == NULL);
+  press(a, 'k');
+  press(a, 'y');
+  CHECK(copied(a, "{\n  \"id\": 1,\n  \"name\": \"alice\",\n  \"ts\": 1730300000\n}"));
+
+  retype(a, "1.000");
+  press(a, 'y');
+  CHECK(copied(a, "1.000"));
+  app_free(a);
+}
+
 #define TESTS(f)                          \
    f(test_focus)                          \
    f(test_click_focuses)                  \
@@ -1303,7 +1342,8 @@ static void test_search_marks(void) {
    f(test_search)                         \
    f(test_search_reveals)                 \
    f(test_search_values)                  \
-   f(test_search_marks)
+   f(test_search_marks)                   \
+   f(test_copy_value)
 
 #define TEST_HELPER_MAIN
 

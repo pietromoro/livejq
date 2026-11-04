@@ -18,6 +18,7 @@ static void init_colors(void);
 static b8 translate(i32 kind, wint_t ch, u32* key);
 static b8 translate_mouse(app_event* ev);
 static void blit(const grid* g);
+static void copy_out(char* osc);
 
 static attr_t style_attrs[STYLE_COUNT];
 static attr_t selected_attrs[STYLE_COUNT]; /* the cursor's line */
@@ -96,6 +97,7 @@ i32 tui_run(const app_opts* opts) {
     }
 
     dirty = app_feed(a, ev) || (kind == KEY_CODE_YES && ch == KEY_RESIZE);
+    copy_out(app_take_clipboard(a));
     if (app_quitting(a)) break;
   }
 
@@ -292,4 +294,16 @@ static void blit(const grid* g) {
   if (g->cursor_x >= 0) move(g->cursor_y, g->cursor_x);
 
   refresh();
+}
+
+/* writes the clipboard sequence between frames, and frees it. the windows
+ * console has no clipboard escape. */
+static void copy_out(char* osc) {
+  if (!osc) return;
+
+#ifndef _WIN32
+  fputs(osc, stdout);
+  fflush(stdout);
+#endif
+  free(osc);
 }

@@ -328,6 +328,12 @@ void tree_render(tree* t, grid* g, i32 x, i32 y, i32 max_x, i32 h, b8 dim, b8 fo
   }
 }
 
+jv tree_value(const tree* t) {
+  if (t->nrows == 0) return jv_invalid();
+
+  return jv_copy(t->rows[t->cursor].value);
+}
+
 void tree_path(tree* t, char* buf, usz cap) {
   if (cap == 0) return;
 

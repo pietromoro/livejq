@@ -81,6 +81,10 @@ b8 app_feed(app* a, app_event ev);
 b8 app_settle(app* a, i64 timeout_ms);
 void app_render(app* a, grid* g);
 app_focus app_focused(const app* a);
+/* The sequence that puts copied text on the terminal's clipboard, once
+ * after the key that copied it, for the front-end to write as is and free.
+ * NULL when nothing was copied. */
+char* app_take_clipboard(app* a);
 /* True after a quit key: Ctrl-C anywhere, q in the tree or the sidebar. */
 b8 app_quitting(const app* a);
 

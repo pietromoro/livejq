@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "app.h"
+#include "clip.h"
 #include "editor.h"
 #include "eval.h"
 #include "help.h"
@@ -49,6 +50,8 @@ struct app {
   b8 help;         /* the overlay is shown */
   help_view help_at;
   b8 quit;
+  char* clip;      /* for app_take_clipboard */
+  char note[64];   /* on the status bar until the next key */
   i32 w;           /* columns of the last render */
   i32 h;           /* and rows */
 
@@ -82,6 +85,8 @@ static void key(app* a, app_event ev);
 static app_focus next_focus(const app* a, i32 step);
 static void tree_key(app* a, u32 key);
 static void start_search(app* a);
+static void copy_value(app* a);
+static void copy(app* a, const char* s, usz len);
 static void search_key(app* a, u32 key);
 static void sidebar_enter(app* a);
 static void save(app* a);
@@ -182,6 +187,7 @@ void app_free(app* a) {
   store_free(a->side.store);
   free(a->loaded);
   free(a->loaded_text);
+  free(a->clip);
   free(a);
 }
 
@@ -262,9 +268,17 @@ void app_render(app* a, grid* g) {
 
 app_focus app_focused(const app* a) { return a->focus; }
 
+char* app_take_clipboard(app* a) {
+  char* clip = a->clip;
+
+  a->clip = NULL;
+  return clip;
+}
+
 b8 app_quitting(const app* a) { return a->quit; }
 
 static void key(app* a, app_event ev) {
+  a->note[0] = '\0';
   if (ev.key == CTRL('c')) {
     a->quit = 1;
     return;
@@ -453,6 +467,9 @@ static void tree_key(app* a, u32 key) {
     case ESC:
       tree_search(a->tree, "");
       break;
+    case 'y':
+      copy_value(a);
+      break;
     default: break;
   }
 }
@@ -473,6 +490,31 @@ static void search_key(app* a, u32 key) {
   }
 
   if (edit(&a->search, key)) tree_search(a->tree, a->search.text ? a->search.text : "");
+}
+
+/* puts the cursor's value on the clipboard as jq prints it. */
+static void copy_value(app* a) {
+  jv v = tree_value(a->tree);
+
+  if (!jv_is_valid(v)) {
+    jv_free(v);
+    return;
+  }
+
+  jv text = jv_dump_string(v, JV_PRINT_INDENT_FLAGS(2));
+  copy(a, jv_string_value(text), (usz)jv_string_length_bytes(jv_copy(text)));
+  jv_free(text);
+}
+
+/* hands the len bytes of s to the front-end for the clipboard, and says
+ * how many on the status bar. */
+static void copy(app* a, const char* s, usz len) {
+  free(a->clip);
+  a->clip = clip_osc52(s, len);
+
+  jv size = view_text(jv_number((f64)len), VIEW_BYTES, NULL);
+  snprintf(a->note, sizeof(a->note), "copied %s", jv_string_value(size));
+  jv_free(size);
 }
 
 /* a press focuses the zone under it and picks the tree line or the saved
@@ -956,12 +998,13 @@ static void render_status(app* a, grid* g) {
   char path[512];
   const char* mid = path;
   if (erred) mid = jv_string_value(err);
+  else if (a->note[0]) mid = a->note;
   else tree_path(a->tree, path, sizeof(path));
 
   const char* nl = strchr(mid, '\n');
   usz mid_len = nl ? (usz)(nl - mid) : strlen(mid);
   i32 keep = erred ? utf8_columns(mid, mid_len) : MIN_PATH;
-  u8 mid_style = erred ? STYLE_STATUS_ERROR : STYLE_STATUS_FAINT;
+  u8 mid_style = erred ? STYLE_STATUS_ERROR : a->note[0] ? STYLE_STATUS : STYLE_STATUS_FAINT;
   char info[160];
   times(a, info, sizeof(info), end - x - utf8_columns(a->name, strlen(a->name)) - 2 - keep);
   right = end - utf8_columns(info, strlen(info));
