@@ -31,6 +31,9 @@ b8 sidebar_key(sidebar* s, u32 key);
 /* Selects the name on row n of the list. False when there is none, or it
  * was already selected. */
 b8 sidebar_click(sidebar* s, i32 n);
+/* Moves the view n names down, up when negative, keeping the cursor in it.
+ * False when it is already at that end. */
+b8 sidebar_scroll(sidebar* s, i32 n);
 /* The selected name, NULL when the folder is empty. */
 const char* sidebar_selected(const sidebar* s);
 /* Selects name if it is listed, else keeps the cursor in range. */

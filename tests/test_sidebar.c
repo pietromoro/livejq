@@ -33,6 +33,7 @@ static app* open_in(const char* dir, b8 with_folder, i64 watch_ms);
 static void press(app* a, u32 key);
 static b8 tick(app* a, i64 now);
 static b8 click(app* a, i32 x, i32 y);
+static b8 wheel(app* a, app_mouse m, i32 x, i32 y);
 static const char* cells(app* a, i32 x, i32 y, i32 max_x);
 static i32 gutter_row(app* a, i32 x);
 static void type(app* a, const char* s);
@@ -45,6 +46,7 @@ static void test_toggle_and_focus(void);
 static void test_navigation(void);
 static void test_tab_in_help(void);
 static void test_click(void);
+static void test_wheel(void);
 static void test_follows_folder(void);
 static void test_load(void);
 static void test_modified_label(void);
@@ -158,6 +160,16 @@ static b8 click(app* a, i32 x, i32 y) {
 
   ev.kind = EV_MOUSE;
   ev.mouse = APP_MOUSE_PRESS;
+  ev.x = x;
+  ev.y = y;
+  return app_feed(a, ev);
+}
+
+static b8 wheel(app* a, app_mouse m, i32 x, i32 y) {
+  app_event ev = { 0 };
+
+  ev.kind = EV_MOUSE;
+  ev.mouse = m;
   ev.x = x;
   ev.y = y;
   return app_feed(a, ev);
@@ -380,8 +392,8 @@ static void test_tab_in_help(void) {
 static void test_click(void) {
   char* dir = make_folder();
 
-  put(dir, "a.query", ".");
-  put(dir, "b.query", ".");
+  put(dir, "a.query", ".a");
+  put(dir, "b.query", ".b");
 
   app* a = open_in(dir, 1, 0);
   if (!a) return;
@@ -390,13 +402,46 @@ static void test_click(void) {
   CHECK(click(a, 3, TOP + 1));
   ASSERT_EQ(app_focused(a), FOCUS_SIDEBAR);
   ASSERT_EQ(gutter_row(a, 1), TOP + 1);
-  CHECK(!click(a, 3, TOP + 1));
   CHECK(!click(a, 3, TOP + 4));
   ASSERT_EQ(gutter_row(a, 1), TOP + 1);
+  ASSERT_STREQ(cells(a, QUERY_X, 1, W - 1), ".");
+  CHECK(click(a, 3, TOP + 1));
+  CHECK(app_settle(a, SETTLE_MS));
+  ASSERT_STREQ(cells(a, QUERY_X, 1, W - 1), ".b");
+  ASSERT_STREQ(cells(a, 1, 0, 6), "\xe2\x94\x80 b \xe2\x94\x80");
+  ASSERT_EQ(app_focused(a), FOCUS_SIDEBAR);
 
   CHECK(click(a, SIDE_W + 2, TOP + 1));
   ASSERT_EQ(app_focused(a), FOCUS_TREE);
   ASSERT_EQ(gutter_row(a, SIDE_W + 1), TOP + 1);
+
+  app_free(a);
+  remove_folder(dir);
+}
+
+static void test_wheel(void) {
+  char* dir = make_folder();
+
+  for (char c = 'a'; c <= 'h'; c++) {
+    char file[] = "?.query";
+
+    file[0] = c;
+    put(dir, file, ".");
+  }
+
+  app* a = open_in(dir, 1, 0);
+  if (!a) return;
+
+  ASSERT_STREQ(cells(a, 2, TOP, SIDE_W - 1), "a");
+  CHECK(!wheel(a, APP_MOUSE_WHEEL_UP, 3, TOP));
+  CHECK(wheel(a, APP_MOUSE_WHEEL_DOWN, 3, TOP));
+  ASSERT_STREQ(cells(a, 2, TOP, SIDE_W - 1), "d");
+  ASSERT_EQ(gutter_row(a, 1), TOP);
+  ASSERT_EQ(app_focused(a), FOCUS_QUERY);
+  CHECK(!wheel(a, APP_MOUSE_WHEEL_DOWN, 3, TOP));
+  CHECK(wheel(a, APP_MOUSE_WHEEL_UP, 3, TOP));
+  ASSERT_STREQ(cells(a, 2, TOP, SIDE_W - 1), "a");
+  ASSERT_EQ(gutter_row(a, 1), TOP + 3);
 
   app_free(a);
   remove_folder(dir);
@@ -779,6 +824,7 @@ static void test_delete_cancelled(void) {
    f(test_navigation)               \
    f(test_tab_in_help)              \
    f(test_click)                    \
+   f(test_wheel)                    \
    f(test_follows_folder)           \
    f(test_load)                     \
    f(test_modified_label)           \

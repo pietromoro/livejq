@@ -567,9 +567,9 @@ static void copy(app* a, const char* s, usz len) {
 }
 
 /* a press focuses the zone under it and picks the tree line or the saved
- * query there, or closes the help or a sidebar prompt; the wheel scrolls the
- * help, or the tree under it without focusing it. true when the screen
- * changed. */
+ * query there, loading the query when it was already picked, or closes the
+ * help or a sidebar prompt; the wheel scrolls the help, or the tree or the
+ * sidebar under it without focusing it. true when the screen changed. */
 static b8 mouse(app* a, app_event ev) {
   app_focus was = a->focus;
   i32 side_w = sidebar_width(&a->side, a->w);
@@ -580,9 +580,12 @@ static b8 mouse(app* a, app_event ev) {
     return help_scroll(&a->help_at, ev.mouse == APP_MOUSE_WHEEL_UP ? -WHEEL_ROWS : WHEEL_ROWS);
 
   if (ev.mouse != APP_MOUSE_PRESS) {
+    i32 rows = ev.mouse == APP_MOUSE_WHEEL_UP ? -WHEEL_ROWS : WHEEL_ROWS;
+
+    if (in_side) return sidebar_scroll(&a->side, rows);
     if (!in_tree) return 0;
 
-    return tree_scroll(a->tree, ev.mouse == APP_MOUSE_WHEEL_UP ? -WHEEL_ROWS : WHEEL_ROWS);
+    return tree_scroll(a->tree, rows);
   }
 
   if (a->help) {
@@ -608,7 +611,12 @@ static b8 mouse(app* a, app_event ev) {
   if (ev.y < QUERY_ROWS) a->focus = FOCUS_QUERY;
   if (in_side) {
     a->focus = FOCUS_SIDEBAR;
-    return sidebar_click(&a->side, ev.y - TREE_Y) || a->focus != was;
+    if (sidebar_click(&a->side, ev.y - TREE_Y)) return 1;
+    if (was != FOCUS_SIDEBAR || ev.y - TREE_Y != a->side.cursor - a->side.top)
+      return a->focus != was;
+
+    sidebar_enter(a);
+    return 1;
   }
 
   if (!in_tree) return a->focus != was;

@@ -133,6 +133,20 @@ b8 sidebar_click(sidebar* s, i32 n) {
   return 1;
 }
 
+b8 sidebar_scroll(sidebar* s, i32 n) {
+  i32 top = s->top + n;
+  i32 count = (i32)store_count(s->store);
+
+  if (top > count - s->page) top = count - s->page;
+  if (top < 0) top = 0;
+  if (top == s->top) return 0;
+
+  s->top = top;
+  if (s->cursor < top) s->cursor = top;
+  if (s->cursor >= top + s->page) s->cursor = top + s->page - 1;
+  return 1;
+}
+
 const char* sidebar_selected(const sidebar* s) {
   if (s->cursor < 0 || s->cursor >= (i32)store_count(s->store)) return NULL;
 
