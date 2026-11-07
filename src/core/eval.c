@@ -4,6 +4,7 @@
 
 #include <jq.h>
 
+#include "complete.h"
 #include "eval.h"
 #include "thread.h"
 
@@ -16,6 +17,7 @@ struct eval {
   u64 submitted;
   char* query;
   usz cap;
+  b8 probe;
   jv new_inputs;
   jv new_args;
 
@@ -32,11 +34,24 @@ typedef struct {
   u64 id;
   char* query;
   usz cap;
+  b8 probe;
 } job;
 
+/* what a probe has handed to the debug callback so far. */
+typedef struct {
+  jv hits;
+  usz cap;
+  b8 full; /* stopped the job on reaching cap */
+  i32* cancel;
+  usz* visited;
+} probed;
+
+static u64 submit(eval* e, const char* query, usz cap, b8 probe);
 static void worker_main(void* arg);
 static b8 run(eval* e, const job* j, eval_result* out);
 static void collect_error(void* data, jv msg);
+static void collect_hit(void* data, jv msg);
+static b8 key_list(jv v);
 static void ignore_msg(void* data, jv msg);
 static jv error_text(jv msg);
 static jv clone(jv v, const i32* cancel, usz* visited);
@@ -98,24 +113,9 @@ void eval_set_args(eval* e, jv named) {
   mutex_unlock(e->lock);
 }
 
-u64 eval_submit(eval* e, const char* query, usz cap) {
-  usz n = strlen(query);
-  char* copy = malloc(n + 1);
-  u64 id;
+u64 eval_submit(eval* e, const char* query, usz cap) { return submit(e, query, cap, 0); }
 
-  if (!copy) abort();
-  memcpy(copy, query, n + 1);
-
-  mutex_lock(e->lock);
-  free(e->query);
-  e->query = copy;
-  e->cap = cap;
-  id = ++e->submitted;
-  atomic_set(&e->cancel, 1);
-  condvar_broadcast(e->changed);
-  mutex_unlock(e->lock);
-  return id;
-}
+u64 eval_probe(eval* e, const char* query, usz cap) { return submit(e, query, cap, 1); }
 
 b8 eval_take(eval* e, eval_result* out) {
   b8 got;
@@ -157,6 +157,33 @@ void eval_result_free(eval_result* r) {
   r->error = jv_null();
 }
 
+jv eval_clone(jv v) {
+  i32 never = 0;
+  usz visited = 0;
+
+  return clone(v, &never, &visited);
+}
+
+static u64 submit(eval* e, const char* query, usz cap, b8 probe) {
+  usz n = strlen(query);
+  char* copy = malloc(n + 1);
+  u64 id;
+
+  if (!copy) abort();
+  memcpy(copy, query, n + 1);
+
+  mutex_lock(e->lock);
+  free(e->query);
+  e->query = copy;
+  e->cap = cap;
+  e->probe = probe;
+  id = ++e->submitted;
+  atomic_set(&e->cancel, 1);
+  condvar_broadcast(e->changed);
+  mutex_unlock(e->lock);
+  return id;
+}
+
 static void worker_main(void* arg) {
   eval* e = arg;
   u64 done = 0;
@@ -175,6 +202,7 @@ static void worker_main(void* arg) {
     j.id = done = e->submitted;
     j.query = e->query;
     j.cap = e->cap;
+    j.probe = e->probe;
     e->query = NULL;
     if (jv_is_valid(e->new_inputs)) {
       jv_free(e->inputs);
@@ -217,6 +245,7 @@ static b8 run(eval* e, const job* j, eval_result* out) {
   i32 n_inputs = jv_array_length(jv_copy(e->inputs));
   usz visited = 0;
   b8 cancelled = 0;
+  probed hits = { jv_array(), j->cap, 0, &e->cancel, &visited };
 
   if (!jq) abort();
 
@@ -227,7 +256,9 @@ static b8 run(eval* e, const job* j, eval_result* out) {
   out->error = jv_null();
 
   jq_set_error_cb(jq, collect_error, &compile_error);
-  jq_set_debug_cb(jq, ignore_msg, NULL);
+  if (j->probe) jq_set_debug_cb(jq, collect_hit, &hits);
+  else jq_set_debug_cb(jq, ignore_msg, NULL);
+
   jq_set_stderr_cb(jq, ignore_msg, NULL);
   jq_set_cancel_flag(jq, &e->cancel);
 
@@ -238,11 +269,16 @@ static b8 run(eval* e, const job* j, eval_result* out) {
     n_inputs = 0;
   }
 
-  for (i32 i = 0; i < n_inputs && !out->capped && !cancelled; i++) {
+  for (i32 i = 0; i < n_inputs && !out->capped && !cancelled && !hits.full; i++) {
     jv v;
 
     jq_start(jq, jv_array_get(jv_copy(e->inputs), i), 0);
     while (jv_is_valid(v = jq_next(jq))) {
+      if (j->probe) {
+        jv_free(v);
+        continue;
+      }
+
       if ((usz)jv_array_length(jv_copy(out->outputs)) >= j->cap) {
         out->capped = 1;
         break;
@@ -254,8 +290,8 @@ static b8 run(eval* e, const job* j, eval_result* out) {
       out->outputs = jv_array_append(out->outputs, v);
     }
 
-    cancelled = atomic_get(&e->cancel) != 0;
-    if (cancelled || out->capped) {
+    cancelled = atomic_get(&e->cancel) != 0 && !hits.full;
+    if (cancelled || out->capped || hits.full) {
       jv_free(v);
     } else if (jq_halted(jq)) {
       jv msg = jq_get_error_message(jq);
@@ -273,6 +309,12 @@ static b8 run(eval* e, const job* j, eval_result* out) {
     } else
       jv_free(v);
   }
+
+  if (j->probe) {
+    jv_free(out->outputs);
+    out->outputs = hits.hits;
+  } else
+    jv_free(hits.hits);
 
   jv_free(compile_error);
   jq_teardown(&jq);
@@ -292,6 +334,52 @@ static void collect_error(void* data, jv msg) {
   }
 
   jv_free(msg);
+}
+
+/* keeps what a probe tagged, and stops the job once cap are kept. */
+static void collect_hit(void* data, jv msg) {
+  probed* p = data;
+  b8 pair = jv_get_kind(msg) == JV_KIND_ARRAY && jv_array_length(jv_copy(msg)) == 2;
+  jv tag = pair ? jv_array_get(jv_copy(msg), 0) : jv_null();
+  jv keys = pair ? jv_array_get(jv_copy(msg), 1) : jv_null();
+
+  b8 ours = jv_get_kind(tag) == JV_KIND_STRING && strcmp(jv_string_value(tag), COMPLETE_TAG) == 0;
+  ours = ours && key_list(keys);
+  jv_free(tag);
+  jv_free(msg);
+  if (!ours || p->full) {
+    jv_free(keys);
+    return;
+  }
+
+  jv hit = clone(keys, p->cancel, p->visited);
+  if (!jv_is_valid(hit)) return;
+
+  p->hits = jv_array_append(p->hits, hit);
+  if ((usz)jv_array_length(jv_copy(p->hits)) < p->cap) return;
+
+  p->full = 1;
+  atomic_set(p->cancel, 1);
+}
+
+/* whether the borrowed v is a list of [name, type] pairs, as the probe
+ * reports keys; the query's own debug calls may send anything. */
+static b8 key_list(jv v) {
+  b8 ok = jv_get_kind(v) == JV_KIND_ARRAY;
+
+  for (i32 i = 0; ok && i < jv_array_length(jv_copy(v)); i++) {
+    jv item = jv_array_get(jv_copy(v), i);
+    b8 two = jv_get_kind(item) == JV_KIND_ARRAY && jv_array_length(jv_copy(item)) == 2;
+    jv name = two ? jv_array_get(jv_copy(item), 0) : jv_null();
+    jv type = two ? jv_array_get(jv_copy(item), 1) : jv_null();
+
+    ok = jv_get_kind(name) == JV_KIND_STRING && jv_get_kind(type) == JV_KIND_STRING;
+    jv_free(name);
+    jv_free(type);
+    jv_free(item);
+  }
+
+  return ok;
 }
 
 static void ignore_msg(void* data, jv msg) {
