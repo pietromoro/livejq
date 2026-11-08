@@ -1,4 +1,5 @@
 const std = @import("std");
+const patch = @import("patch.zig");
 
 pub const jq_version = "1.8.2";
 pub const onig_version = "6.9.10";
@@ -136,58 +137,6 @@ fn jqDefines(mod: *std.Build.Module, target: std.Build.ResolvedTarget) void {
   }
 }
 
-const Splice = struct { anchor: []const u8, before: []const u8 = "", after: []const u8 = "" };
-
-// jq_next cannot be interrupted upstream: a flag polled once per opcode halts
-// the running program, so a superseded query stops instead of leaking a thread.
-const cancel_splices: []const Splice = &.{
-  .{ .anchor = "  int halted;\n", .after = "  int *cancel_flag;\n" },
-  .{ .anchor = "  jq->halted = 0;\n  jq->exit_code = jv_invalid();\n", .after = "  jq->cancel_flag = NULL;\n" },
-  .{
-    .anchor = "    uint16_t opcode = *pc;\n    raising = 0;\n",
-    .before =
-    \\    if (jq->cancel_flag && __atomic_load_n(jq->cancel_flag, __ATOMIC_RELAXED)) {
-    \\      jq_halt(jq, jv_invalid(), jv_string("cancelled"));
-    \\      return jv_invalid();
-    \\    }
-    \\
-    ,
-  },
-};
-
-const cancel_setter =
-  \\
-  \\void jq_set_cancel_flag(jq_state *jq, int *flag) {
-  \\  jq->cancel_flag = flag;
-  \\}
-  \\
-;
-
-fn cancellableExecute(b: *std.Build) []const u8 {
-  const src = spliced(b, jq_dir ++ "/src/execute.c", cancel_splices);
-  return std.mem.concat(b.allocator, u8, &.{ src, cancel_setter }) catch @panic("OOM");
-}
-
-// the build fails on a missing or repeated anchor, so a submodule bump that
-// moves the code cannot drop a patch silently.
-fn spliced(b: *std.Build, path: []const u8, splices: []const Splice) []const u8 {
-  b.dependOnFileContents(b.path(path));
-  const file = b.root.join(b.allocator, path) catch @panic("OOM");
-  var src: []const u8 = file.root_dir.handle.readFileAlloc(b.graph.io, file.sub_path, b.allocator, .unlimited) catch |err|
-    std.debug.panic("cannot read {s}: {t}", .{ path, err });
-
-  for (splices) |s| {
-    const at = std.mem.indexOf(u8, src, s.anchor) orelse
-      std.debug.panic("{s}: patch anchor not found, recheck the patch for this version:\n{s}", .{ path, s.anchor });
-    if (std.mem.indexOfPos(u8, src, at + 1, s.anchor) != null)
-      std.debug.panic("{s}: patch anchor is not unique:\n{s}", .{ path, s.anchor });
-    src = std.mem.concat(b.allocator, u8, &.{
-      src[0..at], s.before, s.anchor, s.after, src[at + s.anchor.len ..],
-    }) catch @panic("OOM");
-  }
-  return src;
-}
-
 pub fn jq(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, onig: *std.Build.Step.Compile) *std.Build.Step.Compile {
   const embed = b.addExecutable(.{
     .name = "embed",
@@ -204,7 +153,7 @@ pub fn jq(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin
   const builtin_inc = run_embed.addOutputFileArg("builtin.inc");
 
   const generated = b.addWriteFiles();
-  const execute_c = generated.add("src/execute.c", cancellableExecute(b));
+  const execute_c = generated.add("src/execute.c", patch.patched(b, jq_dir ++ "/src/execute.c", "build/patches/jq/execute.c.patch"));
   _ = generated.addCopyFile(builtin_inc, "src/builtin.inc");
   _ = generated.add("src/version.h", "#define JQ_VERSION \"" ++ jq_version ++ "\"\n");
   _ = generated.add("src/config_opts.inc", "#define JQ_CONFIG \"livejq\"\n");
@@ -242,69 +191,6 @@ const pdc_port: []const []const u8 = &.{
   "pdcclip.c", "pdcdisp.c", "pdcgetsc.c", "pdckbd.c", "pdcscrn.c", "pdcsetsc.c", "pdcutil.c",
 };
 
-// the vt port sends every color as 38;5;N or 38;2;R;G;B, so the terminal's
-// theme never applies. the 16 basic colors go out as their ansi codes instead,
-// as jq prints them. it never sends dim either, only darkens an explicit color:
-// dim goes out as 2m, and turning it off resets the attributes like bold does.
-const ansi_splices: []const Splice = &.{
-  .{
-    .anchor = "static void reset_color( char *obuff, const chtype ch)\n",
-    .before =
-    \\PACKED_RGB PDC_default_color( int idx);
-    \\
-    \\static int ansi_color( const PACKED_RGB rgb)
-    \\{
-    \\    int i;
-    \\
-    \\    for( i = 0; i < 16; i++)
-    \\        if( rgb == PDC_default_color( i))
-    \\            return( (i & 8) | ((i & COLOR_RED) ? 1 : 0)
-    \\                    | ((i & COLOR_GREEN) ? 2 : 0) | ((i & COLOR_BLUE) ? 4 : 0));
-    \\    return( -1);
-    \\}
-    \\
-    \\static void ansi_string( char *otext, const int idx, const int base)
-    \\{
-    \\    sprintf( otext, CSI "%dm", (idx & 8 ? base + 60 : base) + (idx & 7));
-    \\}
-    \\
-    \\
-    ,
-  },
-  .{
-    .anchor = "            strcpy( obuff, CSI \"49m\");\n",
-    .after =
-    \\        else if( ansi_color( bg) >= 0)
-    \\            ansi_string( obuff, ansi_color( bg), 40);
-    \\
-    ,
-  },
-  .{
-    .anchor = "            strcpy( obuff, CSI \"39m\");\n",
-    .after =
-    \\        else if( ansi_color( fg) >= 0)
-    \\            ansi_string( obuff, ansi_color( fg), 30);
-    \\
-    ,
-  },
-  .{
-    .anchor = "       if( changes & (A_REVERSE | A_STRIKEOUT | A_BOLD))\n",
-    .before =
-    \\       if( changes & A_DIM)
-    \\          changes |= A_BOLD;
-    \\
-    ,
-  },
-  .{
-    .anchor = "          strcat( obuff, BOLD_ON);\n",
-    .after =
-    \\       if( *srcp & A_DIM)
-    \\          strcat( obuff, DIM_ON);
-    \\
-    ,
-  },
-};
-
 pub const pdc_macros: []const [2][]const u8 = &.{
   .{ "PDC_WIDE", "1" },
   .{ "PDC_FORCE_UTF8", "1" },
@@ -321,7 +207,7 @@ pub fn pdcurses(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
     mod.addCSourceFiles(.{ .root = b.path(pdc_dir ++ "/wincon"), .files = pdc_port, .flags = vendor_flags });
   } else {
     const generated = b.addWriteFiles();
-    const disp_c = generated.add("pdcdisp.c", spliced(b, pdc_dir ++ "/vt/pdcdisp.c", ansi_splices));
+    const disp_c = generated.add("pdcdisp.c", patch.patched(b, pdc_dir ++ "/vt/pdcdisp.c", "build/patches/pdcurses/pdcdisp.c.patch"));
     mod.addIncludePath(b.path(pdc_dir ++ "/vt"));
     mod.addCSourceFiles(.{ .root = b.path(pdc_dir ++ "/vt"), .files = pdc_port[0..1] ++ pdc_port[2..], .flags = vendor_flags });
     mod.addCSourceFile(.{ .file = disp_c, .flags = vendor_flags });

@@ -1,0 +1,40 @@
+jq_next cannot be interrupted upstream: a flag polled once per opcode halts
+the running program, so a superseded query stops instead of leaking a thread.
+
+--- a/src/execute.c
++++ b/src/execute.c
+@@ -38,6 +38,7 @@
+   unsigned next_label;
+ 
+   int halted;
++  int *cancel_flag;
+   jv exit_code;
+   jv error_message;
+ 
+@@ -354,6 +355,10 @@
+         printf("\t<halted>\n");
+       return jv_invalid();
+     }
++    if (jq->cancel_flag && __atomic_load_n(jq->cancel_flag, __ATOMIC_RELAXED)) {
++      jq_halt(jq, jv_invalid(), jv_string("cancelled"));
++      return jv_invalid();
++    }
+     uint16_t opcode = *pc;
+     raising = 0;
+ 
+@@ -1068,6 +1073,7 @@
+ 
+   jq->halted = 0;
+   jq->exit_code = jv_invalid();
++  jq->cancel_flag = NULL;
+   jq->error_message = jv_invalid();
+ 
+   jq->input_cb = NULL;
+@@ -1346,3 +1352,7 @@
+ {
+   return jv_copy(jq->error_message);
+ }
++
++void jq_set_cancel_flag(jq_state *jq, int *flag) {
++  jq->cancel_flag = flag;
++}

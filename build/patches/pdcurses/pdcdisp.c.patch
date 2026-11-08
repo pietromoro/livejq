@@ -1,0 +1,68 @@
+the vt port sends every color as 38;5;N or 38;2;R;G;B, so the terminal's
+theme never applies. the 16 basic colors go out as their ansi codes instead,
+as jq prints them. it never sends dim either, only darkens an explicit color:
+dim goes out as 2m, and turning it off resets the attributes like bold does.
+
+--- a/vt/pdcdisp.c
++++ b/vt/pdcdisp.c
+@@ -200,6 +200,24 @@
+     return( rval);
+ }
+ 
++PACKED_RGB PDC_default_color( int idx);
++
++static int ansi_color( const PACKED_RGB rgb)
++{
++    int i;
++
++    for( i = 0; i < 16; i++)
++        if( rgb == PDC_default_color( i))
++            return( (i & 8) | ((i & COLOR_RED) ? 1 : 0)
++                    | ((i & COLOR_GREEN) ? 2 : 0) | ((i & COLOR_BLUE) ? 4 : 0));
++    return( -1);
++}
++
++static void ansi_string( char *otext, const int idx, const int base)
++{
++    sprintf( otext, CSI "%dm", (idx & 8 ? base + 60 : base) + (idx & 7));
++}
++
+ static void reset_color( char *obuff, const chtype ch)
+ {
+     static PACKED_RGB prev_bg = (PACKED_RGB)-2;
+@@ -217,6 +235,8 @@
+         {
+         if( bg == (PACKED_RGB)-1)   /* default background */
+             strcpy( obuff, CSI "49m");
++        else if( ansi_color( bg) >= 0)
++            ansi_string( obuff, ansi_color( bg), 40);
+         else if( !bg)
+             strcpy( obuff, CSI "40m");
+         else if( COLORS == 16)
+@@ -234,6 +254,8 @@
+         obuff += strlen( obuff);
+         if( fg == (PACKED_RGB)-1)   /* default foreground */
+             strcpy( obuff, CSI "39m");
++        else if( ansi_color( fg) >= 0)
++            ansi_string( obuff, ansi_color( fg), 30);
+         else if( COLORS == 16)
+             sprintf( obuff, CSI "3%dm", get_sixteen_color_idx( fg));
+         else
+@@ -294,6 +316,8 @@
+        if( ch < (int)' ' || (ch >= 0x80 && ch <= 0x9f))
+           ch = ' ';
+        *obuff = '\0';
++       if( changes & A_DIM)
++          changes |= A_BOLD;
+        if( changes & (A_REVERSE | A_STRIKEOUT | A_BOLD))
+        {
+           prev_ch = 0;
+@@ -303,6 +327,8 @@
+        }
+        if( SP->termattrs & *srcp & A_BOLD)
+           strcat( obuff, BOLD_ON);
++       if( *srcp & A_DIM)
++          strcat( obuff, DIM_ON);
+        if( changes & A_UNDERLINE)
+           strcat( obuff, (*srcp & A_UNDERLINE) ? UNDERLINE_ON : UNDERLINE_OFF);
+        if( changes & A_ITALIC)
