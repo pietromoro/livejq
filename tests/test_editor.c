@@ -9,7 +9,6 @@
 
 #define W 12
 
-static void type(editor* e, const char* s);
 static const char* render(editor* e, i32* cursor);
 static void test_insert_at_cursor(void);
 static void test_backspace(void);
