@@ -22,6 +22,8 @@ static const entry query_keys[] = {
     { "backspace delete", "delete" },
     { "ctrl-w  alt-backspace", "delete word" },
     { "ctrl-u  ctrl-k", "delete to start / end" },
+    { "\xe2\x86\x93  ctrl-space", "complete the key at the cursor" },
+    { "\xe2\x86\x91\xe2\x86\x93 enter esc", "in the popup: pick, take, close" },
     { "tab", NULL },
     { "F1", "help" },
     { "ctrl-c", "quit" },
@@ -101,6 +103,12 @@ static const entry naming_bar[] = {
 static const entry delete_bar[] = {
     { "y", "delete" },
     { "other keys", "cancel" },
+};
+
+static const entry complete_bar[] = {
+    { "\xe2\x86\x91\xe2\x86\x93", "pick" },
+    { "enter", "take" },
+    { "esc", "close" },
 };
 
 static const entry search_bar[] = {
@@ -208,6 +216,8 @@ void help_bar(grid* g, i32 y, app_focus focus, app_focus next) {
 i32 help_prompt_bar(grid* g, i32 y, help_prompt p) {
   if (p == HELP_PROMPT_DELETE) return bar(g, 1, y, delete_bar, ARRAY_LEN(delete_bar), FOCUS_QUERY);
   if (p == HELP_PROMPT_NAME) return bar(g, 1, y, naming_bar, ARRAY_LEN(naming_bar), FOCUS_QUERY);
+  if (p == HELP_PROMPT_COMPLETE)
+    return bar(g, 1, y, complete_bar, ARRAY_LEN(complete_bar), FOCUS_QUERY);
 
   i32 x = g->w - 1 - bar_width(search_bar, ARRAY_LEN(search_bar));
   if (x < g->w / 2) return g->w - 1;

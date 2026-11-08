@@ -1,4 +1,5 @@
 /* app - application state driven by events, rendered into a grid. */
+#include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,11 +7,13 @@
 
 #include "app.h"
 #include "clip.h"
+#include "complete.h"
 #include "editor.h"
 #include "eval.h"
 #include "help.h"
 #include "highlight.h"
 #include "loader.h"
+#include "popup.h"
 #include "sidebar.h"
 #include "store.h"
 #include "tree.h"
@@ -31,6 +34,8 @@
 #define MAX_PATTERN 20 /* columns the search pattern takes on the status bar */
 #define CTRL(c)     ((c) & 0x1f)
 #define ESC         0x1b
+#define PROBE_HITS  64 /* inputs a probe reports before it stops */
+#define POPUP_ROWS  8
 
 struct app {
   const char* path;
@@ -65,6 +70,14 @@ struct app {
 
   b8 searching;   /* the search prompt is open */
   editor search;
+
+  eval* probe_ev;    /* runs completion probes on the first input */
+  b8 completing;     /* the popup is open */
+  complete_ctx ctx;  /* the word it completes */
+  u64 probing;       /* probe id awaiting its result */
+  b8 falling_back;   /* that probe is the fallback */
+  char* probed;      /* the probe the popup's names came from */
+  popup pop;
 
   editor query;
   b8 edited;      /* not submitted yet */
@@ -106,11 +119,20 @@ static void store_failed(app* a, const char* err);
 static b8 mouse(app* a, app_event ev);
 static b8 poll(app* a, i64 now);
 static void reload(app* a);
+static void hand_inputs(app* a, jv inputs);
+static b8 completion_key(app* a, app_event ev);
+static void open_completion(app* a);
+static void refresh_completion(app* a);
+static void close_completion(app* a);
+static void accept(app* a, i64 now);
+static b8 take_probe(app* a);
+static void filter(app* a);
 static b8 edit(editor* e, u32 key);
 static void submit(app* a);
 static b8 apply(app* a);
 static b8 failed(const app* a);
 static void render_query(app* a, grid* g);
+static void render_popup(app* a, grid* g);
 static void render_search(app* a, grid* g);
 static void render_status(app* a, grid* g);
 static i32 search_width(const char* pattern, const char* found);
@@ -159,14 +181,18 @@ app* app_new(const app_opts* opts, char* err, usz errlen) {
   a->load_error = loaded.error;
   a->store_error = jv_null();
   a->ev = eval_new();
-  if (!a->ev) abort();
+  a->probe_ev = eval_new();
+  if (!a->ev || !a->probe_ev) abort();
 
   a->tree = tree_new();
 
-  eval_set_inputs(a->ev, loaded.inputs);
-  if (jv_get_kind(opts->args) == JV_KIND_OBJECT)
+  popup_init(&a->pop);
+  hand_inputs(a, loaded.inputs);
+  if (jv_get_kind(opts->args) == JV_KIND_OBJECT) {
+    eval_set_args(a->probe_ev, eval_clone(jv_copy(opts->args)));
     eval_set_args(a->ev, opts->args);
-  else jv_free(opts->args);
+  } else
+    jv_free(opts->args);
 
   editor_set(&a->query, q);
 
@@ -178,6 +204,10 @@ void app_free(app* a) {
   if (!a) return;
 
   eval_free(a->ev);
+  eval_free(a->probe_ev);
+  complete_free(&a->ctx);
+  popup_free(&a->pop);
+  free(a->probed);
   tree_free(a->tree);
   jv_free(a->outputs);
   jv_free(a->error);
@@ -217,13 +247,18 @@ b8 app_feed(app* a, app_event ev) {
       break;
   }
 
+  changed = take_probe(a) || changed;
   return apply(a) || changed;
 }
 
 b8 app_settle(app* a, i64 timeout_ms) {
   if (a->edited) submit(a);
   if (a->pending && eval_wait(a->ev, a->pending, timeout_ms)) apply(a);
-  return a->pending == 0;
+
+  for (i32 tries = 0; tries < 2 && a->probing; tries++)
+    if (eval_wait(a->probe_ev, a->probing, timeout_ms)) take_probe(a);
+
+  return a->pending == 0 && a->probing == 0;
 }
 
 /* the query in a box, the tree under it, a status bar and a line of keys. */
@@ -257,9 +292,11 @@ void app_render(app* a, grid* g) {
   );
 
   render_status(a, g);
+  render_popup(a, g);
   if (a->searching) render_search(a, g);
   else if (a->side.naming) help_prompt_bar(g, g->h - 1, HELP_PROMPT_NAME);
   else if (a->side.deleting) help_prompt_bar(g, g->h - 1, HELP_PROMPT_DELETE);
+  else if (a->completing && a->focus == FOCUS_QUERY) help_prompt_bar(g, g->h - 1, HELP_PROMPT_COMPLETE);
   else help_bar(g, g->h - 1, a->focus, next_focus(a, 1));
 
   if (!a->help) return;
@@ -338,6 +375,7 @@ static void key(app* a, app_event ev) {
 
   if (ev.key == '\t' || ev.key == APP_KEY_BACKTAB) {
     a->focus = next_focus(a, ev.key == '\t' ? 1 : -1);
+    close_completion(a);
     return;
   }
 
@@ -359,7 +397,15 @@ static void key(app* a, app_event ev) {
     return;
   }
 
-  if (!edit(&a->query, ev.key)) return;
+  if (a->completing && completion_key(a, ev)) return;
+  if (ev.key == 0 || ev.key == APP_KEY_DOWN) {
+    open_completion(a);
+    return;
+  }
+
+  b8 changed = edit(&a->query, ev.key);
+  if (a->completing) refresh_completion(a);
+  if (!changed) return;
 
   a->edited = 1;
   a->submit_at = ev.now_ms + DEBOUNCE_MS;
@@ -588,6 +634,11 @@ static b8 mouse(app* a, app_event ev) {
     return tree_scroll(a->tree, rows);
   }
 
+  if (a->completing) {
+    close_completion(a);
+    return 1;
+  }
+
   if (a->help) {
     a->help = 0;
     return 1;
@@ -668,6 +719,7 @@ static void start_naming(app* a, const char* name) {
 
 /* drops the loaded query and starts over from . in the box. */
 static void new_query(app* a) {
+  close_completion(a);
   editor_set(&a->query, ".");
   set_loaded(a, NULL, NULL);
   store_failed(a, NULL);
@@ -787,6 +839,7 @@ static b8 rescan(app* a, i64 now) {
   if (!text) return 1;
 
   if (!modified(a)) {
+    close_completion(a);
     editor_set(&a->query, text);
     submit(a);
   }
@@ -866,8 +919,138 @@ static void reload(app* a) {
   }
 
   a->loaded_ms = a->wall_ms;
-  eval_set_inputs(a->ev, loaded.inputs);
+  hand_inputs(a, loaded.inputs);
   submit(a);
+}
+
+/* the inputs to the query's evaluator, a copy of the first one to the
+ * probes'. the next probe runs again over it. */
+static void hand_inputs(app* a, jv inputs) {
+  jv first = jv_array_length(jv_copy(inputs)) > 0 ? JV_ARRAY(eval_clone(jv_array_get(jv_copy(inputs), 0))) : jv_array();
+
+  eval_set_inputs(a->probe_ev, first);
+  eval_set_inputs(a->ev, inputs);
+  free(a->probed);
+  a->probed = NULL;
+  if (a->completing) refresh_completion(a);
+}
+
+/* up and down pick, enter takes the pick, esc closes. true when key was
+ * one of them. */
+static b8 completion_key(app* a, app_event ev) {
+  if (ev.key == ESC) {
+    close_completion(a);
+    return 1;
+  }
+
+  if (ev.key == APP_KEY_ENTER) {
+    accept(a, ev.now_ms);
+    return 1;
+  }
+
+  return popup_key(&a->pop, ev.key);
+}
+
+static void open_completion(app* a) {
+  a->completing = 1;
+  refresh_completion(a);
+}
+
+/* follows the word at the cursor, probing again only when what comes
+ * before it changed, and closes off a key. */
+static void refresh_completion(app* a) {
+  const char* q = a->query.text ? a->query.text : "";
+
+  complete_free(&a->ctx);
+  complete_at(q, a->query.len, a->query.cursor, &a->ctx);
+  if (a->ctx.kind != COMPLETE_KEY) {
+    close_completion(a);
+    return;
+  }
+
+  if (!a->probed || strcmp(a->probed, a->ctx.probe) != 0) {
+    free(a->probed);
+    a->probed = strdup(a->ctx.probe);
+    if (!a->probed) abort();
+
+    popup_clear(&a->pop);
+    a->falling_back = 0;
+    a->probing = eval_probe(a->probe_ev, a->ctx.probe, PROBE_HITS);
+  }
+
+  filter(a);
+}
+
+static void close_completion(app* a) {
+  a->completing = 0;
+  complete_free(&a->ctx);
+}
+
+/* puts the pick in place of the word, quoted when it is no plain name. */
+static void accept(app* a, i64 now) {
+  const char* name = popup_selected(&a->pop);
+
+  if (!name) {
+    close_completion(a);
+    return;
+  }
+
+  b8 plain = !isdigit((u8)name[0]) && name[0] != '\0';
+  for (const char* c = name; *c; c++)
+    if (!isalnum((u8)*c) && *c != '_') plain = 0;
+
+  jv word = plain ? jv_string(name) : jv_dump_string(jv_string(name), 0);
+  const char* q = a->query.text;
+  usz n = (usz)jv_string_length_bytes(jv_copy(word));
+  char* text = malloc(a->query.len + n + 1);
+  if (!text) abort();
+
+  memcpy(text, q, a->ctx.start);
+  memcpy(text + a->ctx.start, jv_string_value(word), n);
+  strcpy(text + a->ctx.start + n, q + a->ctx.end);
+  editor_set(&a->query, text);
+  a->query.cursor = a->ctx.start + n;
+  free(text);
+  jv_free(word);
+  close_completion(a);
+  a->edited = 1;
+  a->submit_at = now + DEBOUNCE_MS;
+}
+
+/* adds what a probe found; a probe that does not compile gives way to its
+ * fallback. true when the popup shows it. */
+static b8 take_probe(app* a) {
+  eval_result r;
+
+  if (!eval_take(a->probe_ev, &r)) return 0;
+
+  if (r.id != a->probing) {
+    eval_result_free(&r);
+    return 0;
+  }
+
+  a->probing = 0;
+  if (r.compile_failed && !a->falling_back && a->ctx.fallback) {
+    a->falling_back = 1;
+    a->probing = eval_probe(a->probe_ev, a->ctx.fallback, PROBE_HITS);
+    eval_result_free(&r);
+    return 0;
+  }
+
+  popup_merge(&a->pop, r.outputs);
+  r.outputs = jv_null();
+  eval_result_free(&r);
+  if (!a->completing) return 0;
+
+  filter(a);
+  return 1;
+}
+
+/* shows the names matching what is typed of the word. */
+static void filter(app* a) {
+  const char* q = a->query.text ? a->query.text : "";
+
+  popup_filter(&a->pop, q + a->ctx.start, a->query.cursor - a->ctx.start);
 }
 
 /* true when the text changed. */
@@ -986,6 +1169,18 @@ static void render_query(app* a, grid* g) {
 
   g->cursor_x = x;
   g->cursor_y = 1;
+}
+
+/* the popup under the query box, its names lined up with the word. */
+static void render_popup(app* a, grid* g) {
+  if (!a->completing || a->focus != FOCUS_QUERY || g->cursor_x < 0) return;
+
+  const char* q = a->query.text ? a->query.text : "";
+  i32 x = g->cursor_x - utf8_columns(q + a->ctx.start, a->query.cursor - a->ctx.start);
+  i32 rows = g->h - QUERY_ROWS - 4;
+  if (rows > POPUP_ROWS) rows = POPUP_ROWS;
+
+  popup_render(&a->pop, g, x - 2, QUERY_ROWS, rows);
 }
 
 /* the pattern being typed after a slash, which match the cursor is on, and

@@ -13,11 +13,12 @@ typedef struct {
   i32 page; /* rows shown */
 } help_view;
 
-/* the sidebar's inline prompts. */
+/* the inline prompts. */
 typedef enum {
   HELP_PROMPT_NAME = 0, /* the name row */
   HELP_PROMPT_DELETE,   /* the confirmation on the selected name */
   HELP_PROMPT_SEARCH,   /* the tree's search, its keys on the right */
+  HELP_PROMPT_COMPLETE, /* the completion popup */
 } help_prompt;
 
 /* Draws a box centered over g with the keys of the zone focus, tab leading
