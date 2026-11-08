@@ -2,6 +2,8 @@
 #ifndef LIVEJQ_COMPLETE_H
 #define LIVEJQ_COMPLETE_H
 
+#include <jv.h>
+
 #include "defines.h"
 
 /* the tag of the values a probe hands to jq's debug callback. */
@@ -29,5 +31,8 @@ typedef struct {
  * the dot, or of the input. */
 void complete_at(const char* s, usz len, usz cursor, complete_ctx* out);
 void complete_free(complete_ctx* c);
+/* jq's builtins as a list of [name, arities] for a popup, sorted, one per
+ * name, with the arities as "/0 /1"; internal names left out. */
+jv complete_builtins(void);
 
 #endif /* LIVEJQ_COMPLETE_H */

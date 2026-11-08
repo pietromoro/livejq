@@ -3,11 +3,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <jq.h>
+
 #include "complete.h"
 
 #define NO_OPENER ((usz) - 1)
 #define PROBE     "__lq_probe"
 #define PUT(t, s) put(t, s, sizeof(s) - 1)
+#define BUILTINS                                                                                 \
+   "[builtins[] | select(startswith(\"_\") | not) | split(\"/\") | {name: .[0], arity: .[1]}] "  \
+   "| group_by(.name) | map([.[0].name, (map(\"/\" + .arity) | sort | join(\" \"))])"
 #define PROBE_DEF                                                                              \
    "def " PROBE ": [\"" COMPLETE_TAG "\", if type == \"object\" then [to_entries[] | [.key, "  \
    "(.value | type)]] else [] end] | debug | empty; "
@@ -30,6 +35,7 @@ typedef struct {
   usz cap;
 } text;
 
+static void ignore(void* data, jv msg);
 static void scan_run(scan* sc);
 static usz scan_string(scan* sc, usz i);
 static usz scan_code(scan* sc, usz i);
@@ -100,6 +106,35 @@ void complete_free(complete_ctx* c) {
   free(c->fallback);
   c->probe = NULL;
   c->fallback = NULL;
+}
+
+jv complete_builtins(void) {
+  jq_state* jq = jq_init();
+  jv out = jv_array();
+
+  if (!jq) abort();
+
+  jq_set_error_cb(jq, ignore, NULL);
+  if (!jq_compile(jq, BUILTINS)) {
+    jq_teardown(&jq);
+    return out;
+  }
+
+  jq_start(jq, jv_null(), 0);
+  jv v = jq_next(jq);
+  if (jv_get_kind(v) == JV_KIND_ARRAY) {
+    jv_free(out);
+    out = v;
+  } else
+    jv_free(v);
+
+  jq_teardown(&jq);
+  return out;
+}
+
+static void ignore(void* data, jv msg) {
+  UNUSED(data);
+  jv_free(msg);
 }
 
 static void scan_run(scan* sc) {

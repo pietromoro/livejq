@@ -71,12 +71,14 @@ struct app {
   b8 searching;   /* the search prompt is open */
   editor search;
 
-  eval* probe_ev;    /* runs completion probes on the first input */
-  b8 completing;     /* the popup is open */
-  complete_ctx ctx;  /* the word it completes */
-  u64 probing;       /* probe id awaiting its result */
-  b8 falling_back;   /* that probe is the fallback */
-  char* probed;      /* the probe the popup's names came from */
+  eval* probe_ev;       /* runs completion probes on the first input */
+  b8 completing;        /* the popup is open */
+  complete_ctx ctx;     /* the word it completes */
+  u64 probing;          /* probe id awaiting its result */
+  b8 falling_back;      /* that probe is the fallback */
+  char* probed;         /* the probe the popup's keys came from */
+  complete_kind listed; /* what the popup holds */
+  jv builtins;          /* for the popup */
   popup pop;
 
   editor query;
@@ -162,6 +164,8 @@ app* app_new(const app_opts* opts, char* err, usz errlen) {
   a = calloc(1, sizeof(*a));
   if (!a) abort();
 
+  a->builtins = complete_builtins();
+
   a->side.store = saved;
   a->side.shown = saved != NULL;
 
@@ -208,6 +212,7 @@ void app_free(app* a) {
   complete_free(&a->ctx);
   popup_free(&a->pop);
   free(a->probed);
+  jv_free(a->builtins);
   tree_free(a->tree);
   jv_free(a->outputs);
   jv_free(a->error);
@@ -956,24 +961,38 @@ static void open_completion(app* a) {
   refresh_completion(a);
 }
 
-/* follows the word at the cursor, probing again only when what comes
- * before it changed, and closes off a key. */
+/* follows the word at the cursor: the builtins where a function can be
+ * called, the keys after a dot, probing again only when what comes before
+ * the dot changed. closes anywhere else. */
 static void refresh_completion(app* a) {
   const char* q = a->query.text ? a->query.text : "";
 
   complete_free(&a->ctx);
   complete_at(q, a->query.len, a->query.cursor, &a->ctx);
-  if (a->ctx.kind != COMPLETE_KEY) {
+  if (a->ctx.kind == COMPLETE_NONE) {
     close_completion(a);
     return;
   }
 
-  if (!a->probed || strcmp(a->probed, a->ctx.probe) != 0) {
+  if (a->ctx.kind == COMPLETE_BUILTIN && a->listed != COMPLETE_BUILTIN) {
+    popup_clear(&a->pop);
+    a->pop.style = STYLE_BUILTIN;
+    popup_merge(&a->pop, JV_ARRAY(jv_copy(a->builtins)));
+    free(a->probed);
+    a->probed = NULL;
+    a->probing = 0;
+    a->listed = COMPLETE_BUILTIN;
+  }
+
+  b8 same = a->listed == COMPLETE_KEY && a->probed && strcmp(a->probed, a->ctx.probe) == 0;
+  if (a->ctx.kind == COMPLETE_KEY && !same) {
     free(a->probed);
     a->probed = strdup(a->ctx.probe);
     if (!a->probed) abort();
 
     popup_clear(&a->pop);
+    a->pop.style = STYLE_KEY;
+    a->listed = COMPLETE_KEY;
     a->falling_back = 0;
     a->probing = eval_probe(a->probe_ev, a->ctx.probe, PROBE_HITS);
   }

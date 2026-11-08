@@ -22,7 +22,7 @@ static const entry query_keys[] = {
     { "backspace delete", "delete" },
     { "ctrl-w  alt-backspace", "delete word" },
     { "ctrl-u  ctrl-k", "delete to start / end" },
-    { "\xe2\x86\x93  ctrl-space", "complete the key at the cursor" },
+    { "\xe2\x86\x93  ctrl-space", "complete the key or builtin at the cursor" },
     { "\xe2\x86\x91\xe2\x86\x93 enter esc", "in the popup: pick, take, close" },
     { "tab", NULL },
     { "F1", "help" },

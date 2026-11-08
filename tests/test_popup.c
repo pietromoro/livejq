@@ -30,6 +30,8 @@ static void test_quoted_key(void);
 static void test_keys_inside_map(void);
 static void test_fallback(void);
 static void test_tab_closes(void);
+static void test_builtins(void);
+static void test_keys_then_builtins(void);
 static void test_merge_takes_lists(void);
 
 static grid* screen;
@@ -239,6 +241,48 @@ static void test_tab_closes(void) {
   app_free(a);
 }
 
+static void test_builtins(void) {
+  app* a = open_app("tests/data/sample.json", ".users | ma");
+
+  if (!a) return;
+
+  press(a, CTRL_SPACE);
+  ASSERT_STREQ(item(a, 0), "\xe2\x94\x83map /1");
+  ASSERT_STREQ(item(a, 1), "map_values /1");
+  type(a, "p_");
+  ASSERT_STREQ(item(a, 0), "\xe2\x94\x83map_values /1");
+  press(a, APP_KEY_ENTER);
+  ASSERT_STREQ(query(a), ".users | map_values");
+
+  type(a, "(ra");
+  press(a, CTRL_SPACE);
+  ASSERT_STREQ(item(a, 0), "\xe2\x94\x83range /1 /2 /3");
+  press(a, ESC);
+  type(a, " | _");
+  press(a, CTRL_SPACE);
+  CHECK(item(a, 0) != NULL && strncmp(item(a, 0), "\xe2\x94\x83_", 4) != 0);
+  app_free(a);
+}
+
+/* one popup follows the cursor from a builtin to a key and back. */
+static void test_keys_then_builtins(void) {
+  app* a = open_app("tests/data/sample.json", ".users[0] | le");
+
+  if (!a) return;
+
+  press(a, CTRL_SPACE);
+  ASSERT_STREQ(item(a, 0), "\xe2\x94\x83length /0");
+  for (i32 i = 0; i < 5; i++) press(a, APP_KEY_LEFT);
+  CHECK(item(a, 0) == NULL);
+  press(a, APP_KEY_HOME);
+  press(a, APP_KEY_RIGHT);
+  press(a, CTRL_SPACE);
+  ASSERT_STREQ(item(a, 0), "\xe2\x94\x83users array");
+  press(a, APP_KEY_END);
+  ASSERT_STREQ(item(a, 0), "\xe2\x94\x83length /0");
+  app_free(a);
+}
+
 /* merging gives back every list it was handed. */
 static void test_merge_takes_lists(void) {
   jv list = jv_parse("[[\"name\", \"string\"], [\"age\", \"number\"]]");
@@ -251,15 +295,17 @@ static void test_merge_takes_lists(void) {
   jv_free(list);
 }
 
-#define TESTS(f)            \
-   f(test_keys_at_path)     \
-   f(test_keys_filtered)    \
-   f(test_pick_and_take)    \
-   f(test_close)            \
-   f(test_quoted_key)       \
-   f(test_keys_inside_map)  \
-   f(test_fallback)         \
-   f(test_tab_closes)       \
+#define TESTS(f)               \
+   f(test_keys_at_path)        \
+   f(test_keys_filtered)       \
+   f(test_pick_and_take)       \
+   f(test_close)               \
+   f(test_quoted_key)          \
+   f(test_keys_inside_map)     \
+   f(test_fallback)            \
+   f(test_tab_closes)          \
+   f(test_builtins)            \
+   f(test_keys_then_builtins)  \
    f(test_merge_takes_lists)
 #define TEST_HELPER_MAIN
 
