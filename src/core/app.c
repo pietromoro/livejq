@@ -299,7 +299,8 @@ void app_render(app* a, grid* g) {
   if (a->searching) render_search(a, g);
   else if (a->side.naming) help_prompt_bar(g, g->h - 1, HELP_PROMPT_NAME);
   else if (a->side.deleting) help_prompt_bar(g, g->h - 1, HELP_PROMPT_DELETE);
-  else if (a->completing && a->focus == FOCUS_QUERY) help_prompt_bar(g, g->h - 1, HELP_PROMPT_COMPLETE);
+  else if (a->completing && a->focus == FOCUS_QUERY && a->pop.n > 0)
+    help_prompt_bar(g, g->h - 1, HELP_PROMPT_COMPLETE);
   else help_bar(g, g->h - 1, a->focus, next_focus(a, 1));
 
   if (!a->help) return;

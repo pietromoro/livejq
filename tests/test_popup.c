@@ -28,6 +28,7 @@ static void press(app* a, u32 key);
 static void type(app* a, const char* s);
 static const char* item(app* a, i32 n);
 static const char* query(app* a);
+static const char* bar(app* a);
 static void test_keys_at_path(void);
 static void test_keys_filtered(void);
 static void test_pick_and_take(void);
@@ -121,6 +122,14 @@ static const char* query(app* a) {
   return buf;
 }
 
+static const char* bar(app* a) {
+  static char buf[W * 4 + 1];
+
+  app_render(a, screen);
+  grid_line(screen, H - 1, buf, sizeof(buf));
+  return buf;
+}
+
 static void test_keys_at_path(void) {
   app* a = open_app("tests/data/sample.json", ".users[0].");
 
@@ -152,8 +161,10 @@ static void test_keys_filtered(void) {
   ASSERT_STREQ(item(a, 0), "\xe2\x94\x83ts number");
   ASSERT_STREQ(item(a, 1), "tags array");
   CHECK(item(a, 2) == NULL);
+  CHECK(strstr(bar(a), "pick") != NULL);
   press(a, 'X');
   CHECK(item(a, 0) == NULL);
+  CHECK(strstr(bar(a), "pick") == NULL);
   press(a, APP_KEY_BACKSPACE);
   ASSERT_STREQ(item(a, 1), "tags array");
   app_free(a);
