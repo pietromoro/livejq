@@ -1,4 +1,4 @@
-/* eval - the query worker, one jq run at a time. */
+/* eval - the query worker, one jq run at a time, probes when idle. */
 #include <stdlib.h>
 #include <string.h>
 
@@ -8,23 +8,27 @@
 #include "eval.h"
 #include "thread.h"
 
+/* the requests of one kind, queries or probes. */
+typedef struct {
+  u64 submitted;
+  u64 done;    /* the last id run to its end */
+  char* query; /* of the newest request */
+  usz cap;
+  i32 cancel;  /* stops its running job */
+  b8 ready;
+  eval_result result;
+} slot;
+
+enum { QUERY = 0, PROBE };
+
 struct eval {
   mutex* lock;
   condvar* changed;
   thread* worker;
   b8 quit;
-
-  u64 submitted;
-  char* query;
-  usz cap;
-  b8 probe;
+  slot slots[2]; /* by QUERY and PROBE */
   jv new_inputs;
   jv new_args;
-
-  i32 cancel; /* stops the running job */
-
-  b8 ready;
-  eval_result result;
 
   jv inputs; /* worker only */
   jv args;   /* worker only */
@@ -35,6 +39,7 @@ typedef struct {
   char* query;
   usz cap;
   b8 probe;
+  i32* cancel;
 } job;
 
 /* what a probe has handed to the debug callback so far. */
@@ -46,8 +51,11 @@ typedef struct {
   usz* visited;
 } probed;
 
-static u64 submit(eval* e, const char* query, usz cap, b8 probe);
+static u64 submit(eval* e, i32 kind, const char* query, usz cap);
+static b8 take(eval* e, i32 kind, eval_result* out);
+static b8 wait_for(eval* e, i32 kind, u64 id, i64 timeout_ms);
 static void worker_main(void* arg);
+static i32 next_job(eval* e, job* j);
 static b8 run(eval* e, const job* j, eval_result* out);
 static void collect_error(void* data, jv msg);
 static void collect_hit(void* data, jv msg);
@@ -73,8 +81,11 @@ eval* eval_new(void) {
   e->new_args = jv_invalid();
   e->inputs = jv_array();
   e->args = jv_object();
-  e->result.outputs = jv_null();
-  e->result.error = jv_null();
+  for (i32 k = 0; k < 2; k++) {
+    e->slots[k].result.outputs = jv_null();
+    e->slots[k].result.error = jv_null();
+  }
+
   e->worker = thread_start(worker_main, e);
   if (!e->lock || !e->changed || !e->worker) abort();
   return e;
@@ -83,17 +94,21 @@ eval* eval_new(void) {
 void eval_free(eval* e) {
   mutex_lock(e->lock);
   e->quit = 1;
-  atomic_set(&e->cancel, 1);
+  atomic_set(&e->slots[QUERY].cancel, 1);
+  atomic_set(&e->slots[PROBE].cancel, 1);
   condvar_broadcast(e->changed);
   mutex_unlock(e->lock);
   thread_join(e->worker);
 
-  free(e->query);
+  for (i32 k = 0; k < 2; k++) {
+    free(e->slots[k].query);
+    eval_result_free(&e->slots[k].result);
+  }
+
   jv_free(e->new_inputs);
   jv_free(e->new_args);
   jv_free(e->inputs);
   jv_free(e->args);
-  eval_result_free(&e->result);
   condvar_free(e->changed);
   mutex_free(e->lock);
   free(e);
@@ -113,32 +128,69 @@ void eval_set_args(eval* e, jv named) {
   mutex_unlock(e->lock);
 }
 
-u64 eval_submit(eval* e, const char* query, usz cap) { return submit(e, query, cap, 0); }
+u64 eval_submit(eval* e, const char* query, usz cap) { return submit(e, QUERY, query, cap); }
 
-u64 eval_probe(eval* e, const char* query, usz cap) { return submit(e, query, cap, 1); }
+u64 eval_probe(eval* e, const char* query, usz cap) { return submit(e, PROBE, query, cap); }
 
-b8 eval_take(eval* e, eval_result* out) {
+b8 eval_take(eval* e, eval_result* out) { return take(e, QUERY, out); }
+b8 eval_take_probe(eval* e, eval_result* out) { return take(e, PROBE, out); }
+b8 eval_wait(eval* e, u64 id, i64 timeout_ms) { return wait_for(e, QUERY, id, timeout_ms); }
+b8 eval_wait_probe(eval* e, u64 id, i64 timeout_ms) { return wait_for(e, PROBE, id, timeout_ms); }
+
+void eval_result_free(eval_result* r) {
+  jv_free(r->outputs);
+  jv_free(r->error);
+  r->outputs = jv_null();
+  r->error = jv_null();
+}
+
+/* a query stops a running probe, which runs again after it. */
+static u64 submit(eval* e, i32 kind, const char* query, usz cap) {
+  usz n = strlen(query);
+  char* copy = malloc(n + 1);
+  slot* sl = &e->slots[kind];
+  u64 id;
+
+  if (!copy) abort();
+  memcpy(copy, query, n + 1);
+
+  mutex_lock(e->lock);
+  free(sl->query);
+  sl->query = copy;
+  sl->cap = cap;
+  id = ++sl->submitted;
+  atomic_set(&sl->cancel, 1);
+  if (kind == QUERY) atomic_set(&e->slots[PROBE].cancel, 1);
+
+  condvar_broadcast(e->changed);
+  mutex_unlock(e->lock);
+  return id;
+}
+
+static b8 take(eval* e, i32 kind, eval_result* out) {
+  slot* sl = &e->slots[kind];
   b8 got;
 
   mutex_lock(e->lock);
-  got = e->ready;
+  got = sl->ready;
   if (got) {
-    *out = e->result;
-    e->ready = 0;
-    e->result.outputs = jv_null();
-    e->result.error = jv_null();
+    *out = sl->result;
+    sl->ready = 0;
+    sl->result.outputs = jv_null();
+    sl->result.error = jv_null();
   }
 
   mutex_unlock(e->lock);
   return got;
 }
 
-b8 eval_wait(eval* e, u64 id, i64 timeout_ms) {
+static b8 wait_for(eval* e, i32 kind, u64 id, i64 timeout_ms) {
+  slot* sl = &e->slots[kind];
   i64 deadline = clock_us() + timeout_ms * 1000;
   b8 done;
 
   mutex_lock(e->lock);
-  while (!(done = e->ready && e->result.id >= id)) {
+  while (!(done = sl->ready && sl->result.id >= id)) {
     i64 left = timeout_ms < 0 ? -1 : (deadline - clock_us()) / 1000;
 
     if (timeout_ms >= 0 && left <= 0) break;
@@ -150,60 +202,26 @@ b8 eval_wait(eval* e, u64 id, i64 timeout_ms) {
   return done;
 }
 
-void eval_result_free(eval_result* r) {
-  jv_free(r->outputs);
-  jv_free(r->error);
-  r->outputs = jv_null();
-  r->error = jv_null();
-}
-
-jv eval_clone(jv v) {
-  i32 never = 0;
-  usz visited = 0;
-
-  return clone(v, &never, &visited);
-}
-
-static u64 submit(eval* e, const char* query, usz cap, b8 probe) {
-  usz n = strlen(query);
-  char* copy = malloc(n + 1);
-  u64 id;
-
-  if (!copy) abort();
-  memcpy(copy, query, n + 1);
-
-  mutex_lock(e->lock);
-  free(e->query);
-  e->query = copy;
-  e->cap = cap;
-  e->probe = probe;
-  id = ++e->submitted;
-  atomic_set(&e->cancel, 1);
-  condvar_broadcast(e->changed);
-  mutex_unlock(e->lock);
-  return id;
-}
-
+/* a result is posted only while it is the newest of its kind; a job stopped
+ * by a query or by a newer request is left pending. */
 static void worker_main(void* arg) {
   eval* e = arg;
-  u64 done = 0;
 
   for (;;) {
     mutex_lock(e->lock);
-    while (!e->quit && e->submitted == done)
+
+    job j;
+    i32 kind;
+    while ((kind = next_job(e, &j)) < 0 && !e->quit)
       condvar_wait(e->changed, e->lock, -1);
 
     if (e->quit) {
+      if (kind >= 0) free(j.query);
+
       mutex_unlock(e->lock);
       return;
     }
 
-    job j;
-    j.id = done = e->submitted;
-    j.query = e->query;
-    j.cap = e->cap;
-    j.probe = e->probe;
-    e->query = NULL;
     if (jv_is_valid(e->new_inputs)) {
       jv_free(e->inputs);
       e->inputs = e->new_inputs;
@@ -216,25 +234,48 @@ static void worker_main(void* arg) {
       e->new_args = jv_invalid();
     }
 
-    atomic_set(&e->cancel, 0);
+    slot* sl = &e->slots[kind];
+    atomic_set(&sl->cancel, 0);
     mutex_unlock(e->lock);
 
     eval_result r;
-    if (run(e, &j, &r)) {
-      mutex_lock(e->lock);
-      if (r.id == e->submitted) {
-        eval_result_free(&e->result);
-        e->result = r;
-        e->ready = 1;
-        condvar_broadcast(e->changed);
-      } else
-        eval_result_free(&r);
-
-      mutex_unlock(e->lock);
+    b8 finished = run(e, &j, &r);
+    mutex_lock(e->lock);
+    if (finished && r.id == sl->submitted) {
+      eval_result_free(&sl->result);
+      sl->result = r;
+      sl->ready = 1;
+      condvar_broadcast(e->changed);
+    } else if (finished) {
+      eval_result_free(&r);
     }
 
+    if (finished) sl->done = j.id;
+
+    mutex_unlock(e->lock);
     free(j.query);
   }
+}
+
+/* the pending query, else the pending probe, as a job owning a copy of its
+ * text. -1 when neither is pending. called locked. */
+static i32 next_job(eval* e, job* j) {
+  for (i32 kind = QUERY; kind <= PROBE; kind++) {
+    slot* sl = &e->slots[kind];
+
+    if (sl->done == sl->submitted) continue;
+
+    j->id = sl->submitted;
+    j->query = strdup(sl->query);
+    if (!j->query) abort();
+
+    j->cap = sl->cap;
+    j->probe = kind == PROBE;
+    j->cancel = &sl->cancel;
+    return kind;
+  }
+
+  return -1;
 }
 
 /* false when the job was cancelled and produced nothing worth posting. */
@@ -245,9 +286,10 @@ static b8 run(eval* e, const job* j, eval_result* out) {
   i32 n_inputs = jv_array_length(jv_copy(e->inputs));
   usz visited = 0;
   b8 cancelled = 0;
-  probed hits = { jv_array(), j->cap, 0, &e->cancel, &visited };
+  probed hits = { jv_array(), j->cap, 0, j->cancel, &visited };
 
   if (!jq) abort();
+  if (j->probe && n_inputs > 1) n_inputs = 1;
 
   out->id = j->id;
   out->compile_failed = 0;
@@ -260,7 +302,7 @@ static b8 run(eval* e, const job* j, eval_result* out) {
   else jq_set_debug_cb(jq, ignore_msg, NULL);
 
   jq_set_stderr_cb(jq, ignore_msg, NULL);
-  jq_set_cancel_flag(jq, &e->cancel);
+  jq_set_cancel_flag(jq, j->cancel);
 
   if (!jq_compile_args(jq, j->query, jv_copy(e->args))) {
     out->compile_failed = 1;
@@ -284,13 +326,13 @@ static b8 run(eval* e, const job* j, eval_result* out) {
         break;
       }
 
-      v = clone(v, &e->cancel, &visited);
+      v = clone(v, j->cancel, &visited);
       if (!jv_is_valid(v)) break;
 
       out->outputs = jv_array_append(out->outputs, v);
     }
 
-    cancelled = atomic_get(&e->cancel) != 0 && !hits.full;
+    cancelled = atomic_get(j->cancel) != 0 && !hits.full;
     if (cancelled || out->capped || hits.full) {
       jv_free(v);
     } else if (jq_halted(jq)) {
@@ -298,13 +340,13 @@ static b8 run(eval* e, const job* j, eval_result* out) {
 
       jv_free(v);
       if (jv_get_kind(out->error) == JV_KIND_NULL && jv_is_valid(msg))
-        out->error = clone(error_text(msg), &e->cancel, &visited);
+        out->error = clone(error_text(msg), j->cancel, &visited);
       else jv_free(msg);
 
       break;
     } else if (jv_invalid_has_msg(jv_copy(v))) {
       if (jv_get_kind(out->error) == JV_KIND_NULL)
-        out->error = clone(error_text(jv_invalid_get_msg(v)), &e->cancel, &visited);
+        out->error = clone(error_text(jv_invalid_get_msg(v)), j->cancel, &visited);
       else jv_free(v);
     } else
       jv_free(v);

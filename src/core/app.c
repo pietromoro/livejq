@@ -71,7 +71,6 @@ struct app {
   b8 searching;   /* the search prompt is open */
   editor search;
 
-  eval* probe_ev;       /* runs completion probes on the first input */
   b8 completing;        /* the popup is open */
   complete_ctx ctx;     /* the word it completes */
   u64 probing;          /* probe id awaiting its result */
@@ -188,18 +187,15 @@ app* app_new(const app_opts* opts, char* err, usz errlen) {
   a->load_error = loaded.error;
   a->store_error = jv_null();
   a->ev = eval_new();
-  a->probe_ev = eval_new();
-  if (!a->ev || !a->probe_ev) abort();
+  if (!a->ev) abort();
 
   a->tree = tree_new();
 
   popup_init(&a->pop);
   hand_inputs(a, loaded.inputs);
-  if (jv_get_kind(opts->args) == JV_KIND_OBJECT) {
-    eval_set_args(a->probe_ev, eval_clone(jv_copy(opts->args)));
+  if (jv_get_kind(opts->args) == JV_KIND_OBJECT)
     eval_set_args(a->ev, opts->args);
-  } else
-    jv_free(opts->args);
+  else jv_free(opts->args);
 
   editor_set(&a->query, q);
 
@@ -211,7 +207,6 @@ void app_free(app* a) {
   if (!a) return;
 
   eval_free(a->ev);
-  eval_free(a->probe_ev);
   complete_free(&a->ctx);
   popup_free(&a->pop);
   free(a->probed);
@@ -264,7 +259,7 @@ b8 app_settle(app* a, i64 timeout_ms) {
   if (a->pending && eval_wait(a->ev, a->pending, timeout_ms)) apply(a);
 
   for (i32 tries = 0; tries < 2 && a->probing; tries++)
-    if (eval_wait(a->probe_ev, a->probing, timeout_ms)) take_probe(a);
+    if (eval_wait_probe(a->ev, a->probing, timeout_ms)) take_probe(a);
 
   return a->pending == 0 && a->probing == 0;
 }
@@ -934,12 +929,8 @@ static void reload(app* a) {
   submit(a);
 }
 
-/* the inputs to the query's evaluator, a copy of the first one to the
- * probes'. the next probe runs again over it. */
+/* the next probe runs again over the new inputs. */
 static void hand_inputs(app* a, jv inputs) {
-  jv first = jv_array_length(jv_copy(inputs)) > 0 ? JV_ARRAY(eval_clone(jv_array_get(jv_copy(inputs), 0))) : jv_array();
-
-  eval_set_inputs(a->probe_ev, first);
   eval_set_inputs(a->ev, inputs);
   free(a->probed);
   a->probed = NULL;
@@ -1019,7 +1010,7 @@ static void refresh_completion(app* a) {
     a->pop.style = STYLE_KEY;
     a->listed = COMPLETE_KEY;
     a->falling_back = 0;
-    a->probing = eval_probe(a->probe_ev, a->ctx.probe, PROBE_HITS);
+    a->probing = eval_probe(a->ev, a->ctx.probe, PROBE_HITS);
   }
 
   filter(a);
@@ -1066,7 +1057,7 @@ static void accept(app* a, i64 now) {
 static b8 take_probe(app* a) {
   eval_result r;
 
-  if (!eval_take(a->probe_ev, &r)) return 0;
+  if (!eval_take_probe(a->ev, &r)) return 0;
 
   if (r.id != a->probing) {
     eval_result_free(&r);
@@ -1076,7 +1067,7 @@ static b8 take_probe(app* a) {
   a->probing = 0;
   if (r.compile_failed && !a->falling_back && a->ctx.fallback) {
     a->falling_back = 1;
-    a->probing = eval_probe(a->probe_ev, a->ctx.fallback, PROBE_HITS);
+    a->probing = eval_probe(a->ev, a->ctx.fallback, PROBE_HITS);
     eval_result_free(&r);
     return 0;
   }

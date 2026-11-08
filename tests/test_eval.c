@@ -1,6 +1,8 @@
 /* eval tests - probes reporting through the debug callback. */
 #include <string.h>
 
+#include "thread.h"
+
 #include "complete.h"
 #include "defines.h"
 #include "eval.h"
@@ -16,7 +18,8 @@ static void test_probe_hits(void);
 static void test_probe_cap_stops(void);
 static void test_probe_compile_error(void);
 static void test_probe_ignores_debug(void);
-static void test_clone(void);
+static void test_probe_first_input(void);
+static void test_query_stops_probe(void);
 
 static eval_result probe(eval* e, const char* q, usz cap) {
   complete_ctx c;
@@ -25,7 +28,7 @@ static eval_result probe(eval* e, const char* q, usz cap) {
   complete_at(q, strlen(q), strlen(q), &c);
   u64 id = eval_probe(e, c.probe, cap);
   complete_free(&c);
-  if (!eval_wait(e, id, WAIT_MS) || !eval_take(e, &r)) FAIL("%s: no result", q);
+  if (!eval_wait_probe(e, id, WAIT_MS) || !eval_take_probe(e, &r)) FAIL("%s: no result", q);
 
   return r;
 }
@@ -84,14 +87,47 @@ static void test_probe_ignores_debug(void) {
   eval_free(e);
 }
 
-static void test_clone(void) {
-  jv v = jv_parse(INPUT);
-  jv c = eval_clone(jv_copy(v));
+static void test_probe_first_input(void) {
+  eval* e = eval_new();
 
-  CHECK(jv_equal(jv_copy(v), jv_copy(c)));
-  CHECK(!jv_identical(jv_object_get(jv_copy(v), jv_string("users")), jv_object_get(jv_copy(c), jv_string("users"))));
-  jv_free(v);
-  jv_free(c);
+  eval_set_inputs(e, JV_ARRAY(jv_parse("{\"a\": 1}"), jv_parse("{\"b\": 2}")));
+
+  eval_result r = probe(e, ".", 10);
+  jv want = jv_parse("[[[\"a\", \"number\"]]]");
+  CHECK(jv_equal(jv_copy(r.outputs), want));
+  eval_result_free(&r);
+  eval_free(e);
+}
+
+/* a slow probe gives way to a query, then runs again to its end. */
+static void test_query_stops_probe(void) {
+  eval* e = eval_new();
+  complete_ctx c;
+  const char* slow = "(range(3e6) | empty), .users[0].";
+
+  eval_set_inputs(e, JV_ARRAY(jv_parse(INPUT)));
+  complete_at(slow, strlen(slow), strlen(slow), &c);
+
+  u64 p = eval_probe(e, c.probe, 10);
+  complete_free(&c);
+
+  u64 q = eval_submit(e, "1", 10);
+  i64 start = clock_us();
+  CHECK(eval_wait(e, q, WAIT_MS));
+  CHECK(!eval_wait_probe(e, p, 0));
+  i64 query_us = clock_us() - start;
+
+  CHECK(eval_wait_probe(e, p, WAIT_MS * 4));
+  CHECK(clock_us() - start > query_us * 2);
+
+  eval_result r;
+  CHECK(eval_take(e, &r));
+  ASSERT_EQ(jv_array_length(jv_copy(r.outputs)), 1);
+  eval_result_free(&r);
+  CHECK(eval_take_probe(e, &r));
+  ASSERT_EQ(jv_array_length(jv_copy(r.outputs)), 1);
+  eval_result_free(&r);
+  eval_free(e);
 }
 
 #define TESTS(f)                \
@@ -99,7 +135,8 @@ static void test_clone(void) {
    f(test_probe_cap_stops)      \
    f(test_probe_compile_error)  \
    f(test_probe_ignores_debug)  \
-   f(test_clone)
+   f(test_probe_first_input)    \
+   f(test_query_stops_probe)
 #define TEST_HELPER_MAIN
 
 /* curufmt skip translation-unit-order */
