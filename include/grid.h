@@ -44,6 +44,9 @@ typedef enum {
   STYLE_SELECTED_IDLE = 0x40, /* the same, while the tree has no focus */
 } style;
 
+/* the cell right of a character two columns wide. */
+#define GRID_TAIL 0x110000
+
 typedef struct {
   u32 ch;
   u8 style;
@@ -68,16 +71,23 @@ void grid_fill_span(grid* g, i32 x, i32 max_x, i32 y, u8 st);
 void grid_restyle(grid* g, i32 x, i32 max_x, i32 y, u8 st);
 /* Draws a box with rounded corners, its inside left untouched. */
 void grid_box(grid* g, i32 x, i32 y, i32 w, i32 h, u8 st);
-/* Writes UTF-8 text from column x, clipped at max_x. Returns the column after
- * the last one written. */
+/* Writes UTF-8 text from column x, clipped at max_x. A character two
+ * columns wide takes its cell and a GRID_TAIL after it, or a blank when only
+ * one is left; one of no width is left out. Returns the column after the
+ * last one written. */
 i32 grid_put(grid* g, i32 x, i32 y, i32 max_x, const char* s, usz len, u8 st);
 /* Like grid_put, but ends with an ellipsis when s does not fit. */
 i32 grid_put_fit(grid* g, i32 x, i32 y, i32 max_x, const char* s, usz len, u8 st);
 i32 grid_puts(grid* g, i32 x, i32 y, const char* s, u8 st);
-/* The columns s takes, one per code point. */
+/* The columns s takes, as a terminal draws it. */
 i32 utf8_columns(const char* s, usz len);
+/* The columns code point c takes: 0, 1 or 2. */
+i32 utf8_width(u32 c);
+/* Decodes the code point at byte *i of the len bytes of s and moves *i past
+ * it; U+FFFD for a malformed one. */
+u32 utf8_next(const char* s, usz len, usz* i);
 cell grid_at(const grid* g, i32 x, i32 y);
-/* Row y as UTF-8 without trailing blanks. */
+/* Row y as UTF-8 without trailing blanks, tails left out. */
 void grid_line(const grid* g, i32 y, char* buf, usz cap);
 /* Writes c as UTF-8 into out, which has room for 4 bytes. Returns the byte
  * count. */

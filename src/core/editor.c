@@ -112,6 +112,7 @@ i32 editor_render(editor* e, grid* g, i32 x, i32 y, i32 max_x, const u8* styles)
   if (e->scroll < 0) e->scroll = 0;
 
   from = skip_columns(e->text, e->len, e->scroll);
+  col += columns(e->text, 0, from) - e->scroll;
   while (from < e->len && col < max_x) {
     u8 st = styles ? styles[from] : STYLE_NORMAL;
     usz to = from + 1;
@@ -142,21 +143,17 @@ static b8 word_byte(char c) {
 }
 
 static i32 columns(const char* s, usz from, usz to) {
-  i32 n = 0;
+  if (!s) return 0;
 
-  for (usz i = from; i < to; i++) n += ((u8)s[i] & 0xc0) != 0x80;
-
-  return n;
+  return utf8_columns(s + from, to - from);
 }
 
+/* the byte where the text drawn from column n on starts, past a wide
+ * character that column n would cut. */
 static usz skip_columns(const char* s, usz len, i32 n) {
   usz i = 0;
 
-  while (i < len && n > 0) {
-    i++;
-    while (i < len && ((u8)s[i] & 0xc0) == 0x80) i++;
-    n--;
-  }
+  while (i < len && n > 0) n -= utf8_width(utf8_next(s, len, &i));
 
   return i;
 }

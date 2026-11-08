@@ -79,7 +79,7 @@ static void test_multibyte(void) {
   editor_insert(&e, 0x1f600);
   ASSERT_STREQ(e.text, ".\"\xc3\xa9t\xf0\x9f\x98\x80\xc3\xa9\"");
   ASSERT_STREQ(render(&e, &at), "> .\"\xc3\xa9t\xf0\x9f\x98\x80\xc3\xa9\"");
-  ASSERT_EQ(at, 7);
+  ASSERT_EQ(at, 8);
   CHECK(editor_backspace(&e));
   CHECK(editor_backspace(&e));
   ASSERT_STREQ(e.text, ".\"\xc3\xa9\xc3\xa9\"");

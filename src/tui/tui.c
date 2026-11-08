@@ -268,6 +268,11 @@ static void blit(const grid* g) {
   for (i32 y = 0; y < g->h && y < LINES; y++) {
     for (i32 x = 0; x < g->w && x < COLS; x++) {
       cell c = grid_at(g, x, y);
+
+      b8 narrowed = sizeof(wchar_t) < 4 && x > 0 && grid_at(g, x - 1, y).ch > 0xffff;
+      if (c.ch == GRID_TAIL && !narrowed) continue;
+      if (c.ch == GRID_TAIL) c.ch = ' ';
+
       u8 st = c.style & ~(STYLE_SELECTED | STYLE_SELECTED_IDLE);
       const attr_t* attrs = style_attrs;
       attr_t at;

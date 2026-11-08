@@ -7,7 +7,9 @@
 #define H_LINE "\xe2\x94\x80"
 #define V_LINE "\xe2\x94\x82"
 
-static u32 utf8_next(const u8* s, usz len, usz* i);
+static void set(grid* g, i32 x, i32 y, u32 c, u8 st);
+static void put_wide(grid* g, i32 x, i32 y, u32 c, u8 st);
+static void unpair(grid* g, i32 x, i32 y);
 
 grid* grid_new(i32 w, i32 h) {
   grid* g = malloc(sizeof(*g));
@@ -47,10 +49,7 @@ void grid_fill_span(grid* g, i32 x, i32 max_x, i32 y, u8 st) {
 
   if (x < 0) x = 0;
   if (max_x > g->w) max_x = g->w;
-  for (; x < max_x; x++) {
-    g->cells[y * g->w + x].ch = ' ';
-    g->cells[y * g->w + x].style = st;
-  }
+  for (; x < max_x; x++) set(g, x, y, ' ', st);
 }
 
 void grid_restyle(grid* g, i32 x, i32 max_x, i32 y, u8 st) {
@@ -88,15 +87,23 @@ i32 grid_put(grid* g, i32 x, i32 y, i32 max_x, const char* s, usz len, u8 st) {
   if (y < 0 || y >= g->h) return x;
 
   while (i < len && x < max_x) {
-    u32 c = utf8_next((const u8*)s, len, &i);
+    u32 c = utf8_next(s, len, &i);
 
     if (c < 0x20 || c == 0x7f) c = 0xfffd;
-    if (x >= 0) {
-      g->cells[y * g->w + x].ch = c;
-      g->cells[y * g->w + x].style = st;
+
+    i32 w = utf8_width(c);
+    if (w == 0) continue;
+
+    if (w == 2 && x + 1 >= max_x) {
+      if (x >= 0) set(g, x, y, ' ', st);
+
+      return x + 1;
     }
 
-    x++;
+    if (w == 2) put_wide(g, x, y, c, st);
+    else if (x >= 0) set(g, x, y, c, st);
+
+    x += w;
   }
 
   return x;
@@ -119,9 +126,10 @@ i32 grid_puts(grid* g, i32 x, i32 y, const char* s, u8 st) {
 }
 
 i32 utf8_columns(const char* s, usz len) {
+  usz i = 0;
   i32 n = 0;
 
-  for (usz i = 0; i < len; i++) n += ((u8)s[i] & 0xc0) != 0x80;
+  while (i < len) n += utf8_width(utf8_next(s, len, &i));
 
   return n;
 }
@@ -134,6 +142,8 @@ void grid_line(const grid* g, i32 y, char* buf, usz cap) {
 
   for (i32 x = 0; x < g->w && n + 4 < cap; x++) {
     u32 c = g->cells[y * g->w + x].ch;
+
+    if (c == GRID_TAIL) continue;
 
     n += utf8_put(c, buf + n);
     if (c != ' ') keep = n;
@@ -168,7 +178,8 @@ usz utf8_put(u32 c, char* out) {
   return 4;
 }
 
-static u32 utf8_next(const u8* s, usz len, usz* i) {
+u32 utf8_next(const char* str, usz len, usz* i) {
+  const u8* s = (const u8*)str;
   u32 c = s[(*i)++];
   i32 more;
 
@@ -193,4 +204,38 @@ static u32 utf8_next(const u8* s, usz len, usz* i) {
   }
 
   return c;
+}
+
+/* writes one cell, blanking the other half of a wide character it splits. */
+static void set(grid* g, i32 x, i32 y, u32 c, u8 st) {
+  cell* at = &g->cells[y * g->w + x];
+
+  unpair(g, x, y);
+  at->ch = c;
+  at->style = st;
+}
+
+/* a wide character cut by the left edge leaves a blank. */
+static void put_wide(grid* g, i32 x, i32 y, u32 c, u8 st) {
+  cell* row = &g->cells[y * g->w];
+
+  if (x < 0) {
+    if (x + 1 >= 0) set(g, x + 1, y, ' ', st);
+
+    return;
+  }
+
+  unpair(g, x, y);
+  unpair(g, x + 1, y);
+  row[x].ch = c;
+  row[x].style = st;
+  row[x + 1].ch = GRID_TAIL;
+  row[x + 1].style = st;
+}
+
+static void unpair(grid* g, i32 x, i32 y) {
+  cell* row = &g->cells[y * g->w];
+
+  if (row[x].ch == GRID_TAIL && x > 0) row[x - 1].ch = ' ';
+  if (row[x].ch != GRID_TAIL && x + 1 < g->w && row[x + 1].ch == GRID_TAIL) row[x + 1].ch = ' ';
 }

@@ -22,6 +22,7 @@ pub fn build(b: *std.Build) void {
     .link_libc = true,
   });
   core_mod.addIncludePath(b.path("include"));
+  core_mod.addIncludePath(widthTables(b));
   core_mod.addCSourceFiles(.{ .root = b.path("src/core"), .files = cSources(b, "src/core"), .flags = c_flags });
   core_mod.addCMacro("_POSIX_C_SOURCE", "200809L");
   if (target.result.os.tag == .macos) core_mod.addCMacro("_DARWIN_C_SOURCE", "1");
@@ -116,4 +117,27 @@ fn ensureSubmodules(b: *std.Build) void {
       return;
     };
   }
+}
+
+// the directory holding width.inc, the code points taking no columns or two,
+// made by tools/width.c from the unicode data files.
+fn widthTables(b: *std.Build) std.Build.LazyPath {
+  const gen = b.addExecutable(.{
+    .name = "width",
+    .root_module = b.createModule(.{
+      .target = b.graph.host,
+      .optimize = .ReleaseFast,
+      .link_libc = true,
+    }),
+  });
+  gen.root_module.addIncludePath(b.path("include"));
+  gen.root_module.addCSourceFile(.{ .file = b.path("tools/width.c"), .flags = c_flags });
+  const run = b.addRunArtifact(gen);
+  run.addFileArg(b.path("tools/ucd/EastAsianWidth.txt"));
+  run.addFileArg(b.path("tools/ucd/UnicodeData.txt"));
+  const inc = run.addOutputFileArg("width.inc");
+
+  const dir = b.addWriteFiles();
+  _ = dir.addCopyFile(inc, "width.inc");
+  return dir.getDirectory();
 }
