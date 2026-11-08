@@ -67,12 +67,11 @@ pub fn oniguruma(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.
 const jq_dir = "vendor/jq";
 
 const jq_sources: []const []const u8 = &.{
-  "src/builtin.c",   "src/bytecode.c",  "src/compile.c",
-  "src/jv.c",       "src/jv_alloc.c",  "src/jv_aux.c",      "src/jv_dtoa.c",
-  "src/jv_file.c",   "src/jv_parse.c",  "src/jv_print.c",    "src/jv_unicode.c",
-  "src/linker.c",    "src/locfile.c",   "src/util.c",        "src/jv_dtoa_tsd.c",
-  "src/lexer.c",     "src/parser.c",    "vendor/decNumber/decContext.c",
-  "vendor/decNumber/decNumber.c",
+  "src/builtin.c",    "src/bytecode.c",   "src/compile.c",                 "src/jv_alloc.c",
+  "src/jv_aux.c",     "src/jv_dtoa.c",    "src/jv_dtoa_tsd.c",             "src/jv_file.c",
+  "src/jv_parse.c",   "src/jv_print.c",   "src/jv_unicode.c",              "src/lexer.c",
+  "src/linker.c",     "src/locfile.c",    "src/parser.c",                  "src/util.c",
+  "vendor/decNumber/decContext.c",        "vendor/decNumber/decNumber.c",
 };
 
 const jq_math_common: []const []const u8 = &.{
@@ -154,6 +153,7 @@ pub fn jq(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin
 
   const generated = b.addWriteFiles();
   const execute_c = generated.add("src/execute.c", patch.patched(b, jq_dir ++ "/src/execute.c", "build/patches/jq/execute.c.patch"));
+  const jv_c = generated.add("src/jv.c", patch.patched(b, jq_dir ++ "/src/jv.c", "build/patches/jq/jv.c.patch"));
   _ = generated.addCopyFile(builtin_inc, "src/builtin.inc");
   _ = generated.add("src/version.h", "#define JQ_VERSION \"" ++ jq_version ++ "\"\n");
   _ = generated.add("src/config_opts.inc", "#define JQ_CONFIG \"livejq\"\n");
@@ -167,6 +167,7 @@ pub fn jq(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin
   jqDefines(mod, target);
   mod.addCSourceFiles(.{ .root = b.path(jq_dir), .files = jq_sources, .flags = vendor_flags });
   mod.addCSourceFile(.{ .file = execute_c, .flags = vendor_flags });
+  mod.addCSourceFile(.{ .file = jv_c, .flags = vendor_flags });
   if (target.result.os.tag == .windows) mod.linkSystemLibrary("shlwapi", .{});
 
   const lib = b.addLibrary(.{ .name = "jq", .root_module = mod });

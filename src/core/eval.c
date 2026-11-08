@@ -48,7 +48,6 @@ typedef struct {
   usz cap;
   b8 full; /* stopped the job on reaching cap */
   i32* cancel;
-  usz* visited;
 } probed;
 
 static u64 submit(eval* e, i32 kind, const char* query, usz cap);
@@ -62,11 +61,6 @@ static void collect_hit(void* data, jv msg);
 static b8 key_list(jv v);
 static void ignore_msg(void* data, jv msg);
 static jv error_text(jv msg);
-static jv clone(jv v, const i32* cancel, usz* visited);
-static jv clone_number(jv v);
-static jv clone_string(jv v);
-static jv clone_array(jv v, const i32* cancel, usz* visited);
-static jv clone_object(jv v, const i32* cancel, usz* visited);
 
 void jq_set_cancel_flag(jq_state* jq, i32* flag);
 
@@ -284,9 +278,8 @@ static b8 run(eval* e, const job* j, eval_result* out) {
   jq_state* jq = jq_init();
   jv compile_error = jv_null();
   i32 n_inputs = jv_array_length(jv_copy(e->inputs));
-  usz visited = 0;
   b8 cancelled = 0;
-  probed hits = { jv_array(), j->cap, 0, j->cancel, &visited };
+  probed hits = { jv_array(), j->cap, 0, j->cancel };
 
   if (!jq) abort();
   if (j->probe && n_inputs > 1) n_inputs = 1;
@@ -326,9 +319,6 @@ static b8 run(eval* e, const job* j, eval_result* out) {
         break;
       }
 
-      v = clone(v, j->cancel, &visited);
-      if (!jv_is_valid(v)) break;
-
       out->outputs = jv_array_append(out->outputs, v);
     }
 
@@ -340,13 +330,13 @@ static b8 run(eval* e, const job* j, eval_result* out) {
 
       jv_free(v);
       if (jv_get_kind(out->error) == JV_KIND_NULL && jv_is_valid(msg))
-        out->error = clone(error_text(msg), j->cancel, &visited);
+        out->error = error_text(msg);
       else jv_free(msg);
 
       break;
     } else if (jv_invalid_has_msg(jv_copy(v))) {
       if (jv_get_kind(out->error) == JV_KIND_NULL)
-        out->error = clone(error_text(jv_invalid_get_msg(v)), j->cancel, &visited);
+        out->error = error_text(jv_invalid_get_msg(v));
       else jv_free(v);
     } else
       jv_free(v);
@@ -394,10 +384,7 @@ static void collect_hit(void* data, jv msg) {
     return;
   }
 
-  jv hit = clone(keys, p->cancel, p->visited);
-  if (!jv_is_valid(hit)) return;
-
-  p->hits = jv_array_append(p->hits, hit);
+  p->hits = jv_array_append(p->hits, keys);
   if ((usz)jv_array_length(jv_copy(p->hits)) < p->cap) return;
 
   p->full = 1;
@@ -434,79 +421,4 @@ static jv error_text(jv msg) {
     return msg;
 
   return jv_string_concat(jv_string("error (not a string): "), jv_dump_string(msg, 0));
-}
-
-/* rebuilds v without sharing any allocation, so the result can leave the
- * worker while the inputs it came from stay in use. consumes v. returns an
- * invalid value when the job is cancelled midway. */
-static jv clone(jv v, const i32* cancel, usz* visited) {
-  jv out;
-
-  *visited += 1;
-  if ((*visited & 4095) == 0 && atomic_get(cancel)) {
-    jv_free(v);
-    return jv_invalid();
-  }
-
-  switch (jv_get_kind(v)) {
-    case JV_KIND_NUMBER:
-      out = clone_number(v); break;
-    case JV_KIND_STRING:
-      out = clone_string(v); break;
-    case JV_KIND_ARRAY:
-      out = clone_array(v, cancel, visited); break;
-    case JV_KIND_OBJECT:
-      out = clone_object(v, cancel, visited); break;
-    default: return v;
-  }
-
-  jv_free(v);
-  return out;
-}
-
-static jv clone_number(jv v) {
-  if (jv_number_has_literal(v))
-    return jv_number_with_literal(jv_number_get_literal(v));
-
-  return jv_number(jv_number_value(v));
-}
-
-static jv clone_string(jv v) {
-  return jv_string_sized(jv_string_value(v), jv_string_length_bytes(jv_copy(v)));
-}
-
-static jv clone_array(jv v, const i32* cancel, usz* visited) {
-  jv out = jv_array();
-
-  jv_array_foreach(v, i, item) {
-    jv c = clone(item, cancel, visited);
-
-    if (!jv_is_valid(c)) {
-      jv_free(out);
-      return c;
-    }
-
-    out = jv_array_append(out, c);
-  }
-
-  return out;
-}
-
-static jv clone_object(jv v, const i32* cancel, usz* visited) {
-  jv out = jv_object();
-
-  jv_object_foreach(v, key, item) {
-    jv c = clone(item, cancel, visited);
-
-    if (!jv_is_valid(c)) {
-      jv_free(key);
-      jv_free(out);
-      return c;
-    }
-
-    out = jv_object_set(out, clone_string(key), c);
-    jv_free(key);
-  }
-
-  return out;
 }

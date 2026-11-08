@@ -12,7 +12,7 @@ typedef struct {
   u64 id;
   b8 compile_failed;
   b8 capped;
-  jv outputs; /* shares nothing with the worker */
+  jv outputs; /* may share values with the inputs */
   jv error;   /* first error, string or null */
   i64 elapsed_us;
 } eval_result;
@@ -20,9 +20,9 @@ typedef struct {
 eval* eval_new(void);
 void eval_free(eval* e);
 
-/* jq values are not thread-safe: inputs and args are handed over, and the
- * caller must hold no other reference to them or to anything inside them.
- * They take effect from the next submitted query. */
+/* Inputs and args are handed over, and take effect from the next submitted
+ * query. Values cross threads freely: jq's reference counts and lazy caches
+ * are made atomic by build/patches/jq/jv.c.patch. */
 void eval_set_inputs(eval* e, jv inputs);
 void eval_set_args(eval* e, jv named);
 

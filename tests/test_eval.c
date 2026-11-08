@@ -20,6 +20,7 @@ static void test_probe_compile_error(void);
 static void test_probe_ignores_debug(void);
 static void test_probe_first_input(void);
 static void test_query_stops_probe(void);
+static void test_cap_keeps_inputs(void);
 
 static eval_result probe(eval* e, const char* q, usz cap) {
   complete_ctx c;
@@ -130,13 +131,35 @@ static void test_query_stops_probe(void) {
   eval_free(e);
 }
 
+/* the output that hits the cap is still in the input, which keeps it. */
+static void test_cap_keeps_inputs(void) {
+  eval* e = eval_new();
+  jv inputs = JV_ARRAY(jv_parse("[{\"a\": 1}, {\"b\": 2}]"));
+
+  eval_set_inputs(e, jv_copy(inputs));
+
+  eval_result r = { 0 };
+  u64 id = eval_submit(e, ".[]", 1);
+  if (!eval_wait(e, id, WAIT_MS) || !eval_take(e, &r)) FAIL("no result");
+
+  CHECK(r.capped);
+  eval_result_free(&r);
+
+  jv second = jv_array_get(jv_array_get(jv_copy(inputs), 0), 1);
+  CHECK(jv_get_refcnt(second) == 2);
+  jv_free(second);
+  eval_free(e);
+  jv_free(inputs);
+}
+
 #define TESTS(f)                \
    f(test_probe_hits)           \
    f(test_probe_cap_stops)      \
    f(test_probe_compile_error)  \
    f(test_probe_ignores_debug)  \
    f(test_probe_first_input)    \
-   f(test_query_stops_probe)
+   f(test_query_stops_probe)    \
+   f(test_cap_keeps_inputs)
 #define TEST_HELPER_MAIN
 
 /* curufmt skip translation-unit-order */

@@ -1,0 +1,110 @@
+jq values are shared between the query's worker and the main thread, so that
+outputs need not be copied out of the worker. jq counts references with plain
+increments and fills three caches the first time a value is read: a literal
+number's double and its text, and a string's hash. the counts become atomic,
+the double and the hash are stored atomically, the hash before the flag that
+says it is there, and the text is published with a compare-and-swap, the
+loser freeing its own copy.
+
+--- a/src/jv.c
++++ b/src/jv.c
+@@ -61,17 +61,17 @@
+ static const jv_refcnt JV_REFCNT_INIT = {1};
+ 
+ static void jvp_refcnt_inc(jv_refcnt* c) {
+-  c->count++;
++  __atomic_fetch_add(&c->count, 1, __ATOMIC_RELAXED);
+ }
+ 
+ static int jvp_refcnt_dec(jv_refcnt* c) {
+-  c->count--;
+-  return c->count == 0;
++  return __atomic_sub_fetch(&c->count, 1, __ATOMIC_ACQ_REL) == 0;
+ }
+ 
+ static int jvp_refcnt_unshared(jv_refcnt* c) {
+-  assert(c->count > 0);
+-  return c->count == 1;
++  int count = __atomic_load_n(&c->count, __ATOMIC_ACQUIRE);
++  assert(count > 0);
++  return count == 1;
+ }
+ 
+ #define KIND_MASK   0xF
+@@ -637,17 +637,23 @@
+     return NULL;
+   }
+ 
+-  if (plit->literal_data == NULL) {
++  char* literal = __atomic_load_n(&plit->literal_data, __ATOMIC_ACQUIRE);
++  if (literal == NULL) {
+     int len = jvp_dec_number_ptr(n)->digits + 15 /* 14 + NUL */;
+-    plit->literal_data = jv_mem_alloc(len);
++    char* mine = jv_mem_alloc(len);
+ 
+     // Preserve the actual precision as we have parsed it
+     // don't do decNumberTrim(pdec);
+ 
+-    decNumberToString(pdec, plit->literal_data);
++    decNumberToString(pdec, mine);
++    if (__atomic_compare_exchange_n(&plit->literal_data, &literal, mine, 0,
++                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
++      literal = mine;
++    else
++      jv_mem_free(mine);
+   }
+ 
+-  return plit->literal_data;
++  return literal;
+ }
+ 
+ int jv_number_has_literal(jv n) {
+@@ -701,11 +707,14 @@
+   if (JVP_HAS_FLAGS(j, JVP_FLAGS_NUMBER_LITERAL)) {
+     jvp_literal_number* n = jvp_literal_number_ptr(j);
+ 
+-    if (isnan(n->num_double)) {
+-      n->num_double = jvp_literal_number_to_double(j);
++    double d;
++    __atomic_load(&n->num_double, &d, __ATOMIC_RELAXED);
++    if (isnan(d)) {
++      d = jvp_literal_number_to_double(j);
++      __atomic_store(&n->num_double, &d, __ATOMIC_RELAXED);
+     }
+ 
+-    return n->num_double;
++    return d;
+   }
+ #endif
+   return j.u.number;
+@@ -1166,7 +1175,7 @@
+ }
+ 
+ static uint32_t jvp_string_length(jvp_string* s) {
+-  return s->length_hashed >> 1;
++  return __atomic_load_n(&s->length_hashed, __ATOMIC_RELAXED) >> 1;
+ }
+ 
+ static uint32_t jvp_string_remaining_space(jvp_string* s) {
+@@ -1239,8 +1248,8 @@
+ 
+ static uint32_t jvp_string_hash(jv jstr) {
+   jvp_string* str = jvp_string_ptr(jstr);
+-  if (str->length_hashed & 1)
+-    return str->hash;
++  if (__atomic_load_n(&str->length_hashed, __ATOMIC_ACQUIRE) & 1)
++    return __atomic_load_n(&str->hash, __ATOMIC_RELAXED);
+ 
+   /* The following is based on MurmurHash3.
+      MurmurHash3 was written by Austin Appleby, and is placed
+@@ -1289,8 +1298,8 @@
+   h1 *= 0xc2b2ae35;
+   h1 ^= h1 >> 16;
+ 
+-  str->length_hashed |= 1;
+-  str->hash = h1;
++  __atomic_store_n(&str->hash, h1, __ATOMIC_RELAXED);
++  __atomic_fetch_or(&str->length_hashed, 1, __ATOMIC_RELEASE);
+ 
+   return h1;
+ }
