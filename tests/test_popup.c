@@ -1,5 +1,9 @@
 /* popup tests - completing keys in the query through the core. */
+#define _POSIX_C_SOURCE 200809L
+
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "app.h"
 #include "defines.h"
@@ -16,8 +20,10 @@
 #define ESC        0x1b
 #define CORNER     0x256d /* ╭ */
 #define CORNER_END 0x256e /* ╮ */
+#define CTRL(c)    ((c) & 0x1f)
 
 static app* open_app(const char* path, const char* query);
+static app* open_with(const char* path, const char* query, const char* folder);
 static void press(app* a, u32 key);
 static void type(app* a, const char* s);
 static const char* item(app* a, i32 n);
@@ -33,16 +39,20 @@ static void test_tab_closes(void);
 static void test_builtins(void);
 static void test_keys_then_builtins(void);
 static void test_opens_while_typing(void);
+static void test_ctrl_n_p(void);
 static void test_merge_takes_lists(void);
 
 static grid* screen;
 
-static app* open_app(const char* path, const char* query) {
+static app* open_app(const char* path, const char* query) { return open_with(path, query, NULL); }
+
+static app* open_with(const char* path, const char* query, const char* folder) {
   app_opts o;
 
   memset(&o, 0, sizeof(o));
   o.path = path;
   o.query = query;
+  o.query_folder = folder;
   o.args = jv_invalid();
 
   char err[256];
@@ -302,6 +312,32 @@ static void test_opens_while_typing(void) {
   app_free(a);
 }
 
+/* ctrl-n moves in the popup, and starts a new query once it is closed. */
+static void test_ctrl_n_p(void) {
+  char folder[] = "/tmp/livejq-popup-XXXXXX";
+
+  if (!mkdtemp(folder)) {
+    FAIL("mkdtemp");
+    return;
+  }
+
+  app* a = open_with("tests/data/sample.json", ".users[0].", folder);
+  if (!a) return;
+
+  press(a, CTRL_SPACE);
+  press(a, CTRL('n'));
+  ASSERT_STREQ(item(a, 1), "\xe2\x94\x83name string");
+  press(a, CTRL('p'));
+  press(a, CTRL('p'));
+  ASSERT_STREQ(item(a, 2), "\xe2\x94\x83ts number");
+  ASSERT_STREQ(query(a), ".users[0].");
+  press(a, ESC);
+  press(a, CTRL('n'));
+  ASSERT_STREQ(query(a), ".");
+  app_free(a);
+  rmdir(folder);
+}
+
 /* merging gives back every list it was handed. */
 static void test_merge_takes_lists(void) {
   jv list = jv_parse("[[\"name\", \"string\"], [\"age\", \"number\"]]");
@@ -326,6 +362,7 @@ static void test_merge_takes_lists(void) {
    f(test_builtins)            \
    f(test_keys_then_builtins)  \
    f(test_opens_while_typing)  \
+   f(test_ctrl_n_p)            \
    f(test_merge_takes_lists)
 #define TEST_HELPER_MAIN
 

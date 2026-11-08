@@ -8,6 +8,7 @@
 #include "popup.h"
 
 #define GUTTER  "\xe2\x94\x83"
+#define CTRL(c) ((c) & 0x1f)
 #define PADDING 6 /* the borders, the gutter, two blanks between, one after */
 
 static void clamp(popup* p, i32 rows);
@@ -103,9 +104,11 @@ b8 popup_key(popup* p, u32 key) {
 
   switch (key) {
     case APP_KEY_UP:
+    case CTRL('p'):
       p->cursor = (p->cursor + p->n - 1) % p->n;
       return 1;
     case APP_KEY_DOWN:
+    case CTRL('n'):
       p->cursor = (p->cursor + 1) % p->n;
       return 1;
     default: return 0;

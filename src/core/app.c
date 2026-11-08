@@ -370,7 +370,8 @@ static void key(app* a, app_event ev) {
     return;
   }
 
-  if (ev.key == CTRL('n') && a->side.store) {
+  b8 popup = a->completing && a->focus == FOCUS_QUERY;
+  if (ev.key == CTRL('n') && a->side.store && !popup) {
     new_query(a);
     return;
   }

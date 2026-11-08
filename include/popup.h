@@ -28,8 +28,8 @@ void popup_merge(popup* p, jv lists);
  * then those containing it, ignoring case unless typed has a capital. The
  * cursor goes back to the first. */
 void popup_filter(popup* p, const char* typed, usz len);
-/* Moves for up and down, wrapping around. False when key is not one of
- * them. */
+/* Moves for up, down, ctrl-p and ctrl-n, wrapping around. False when key
+ * is not one of them. */
 b8 popup_key(popup* p, u32 key);
 /* The selected name, NULL when nothing matches. */
 const char* popup_selected(const popup* p);
