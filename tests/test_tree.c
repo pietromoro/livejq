@@ -44,6 +44,7 @@ static b8 selected(app* a, i32 n);
 static u8 style_at(app* a, i32 x, i32 n);
 static b8 copied(app* a, const char* text);
 static void test_focus(void);
+static void test_long_string(void);
 static void test_click_focuses(void);
 static void test_click_picks_lines(void);
 static void test_wheel_scrolls(void);
@@ -1247,6 +1248,25 @@ static void test_search_values(void) {
   app_free(a);
 }
 
+/* a string far longer than its row is cut with an ellipsis, escaped and
+ * searched in the part shown. */
+static void test_long_string(void) {
+  app* a = open_app("tests/data/sample.json", "\"a\\\"b\" * 100000");
+
+  if (!a) return;
+
+  const char* r = row(a, 0);
+  CHECK(strncmp(r, "  #0 \"a\\\"ba\\\"b", 14) == 0);
+  ASSERT_EQ(utf8_columns(r, strlen(r)), W - LEFT - 1);
+  CHECK(strcmp(r + strlen(r) - 3, "\xe2\x80\xa6") == 0);
+
+  press(a, '\t');
+  type(a, "/b");
+  ASSERT_EQ(style_at(a, 8, 0), STYLE_STRING);
+  ASSERT_EQ(style_at(a, 9, 0), STYLE_MATCH);
+  app_free(a);
+}
+
 static void test_search_marks(void) {
   app* a = open_app("tests/data/sample.json", ".");
 
@@ -1407,6 +1427,7 @@ static void test_pipe_path(void) {
    f(test_search)                         \
    f(test_search_reveals)                 \
    f(test_search_values)                  \
+   f(test_long_string)                    \
    f(test_search_marks)                   \
    f(test_copy_value)                     \
    f(test_copy_path)                      \

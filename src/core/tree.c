@@ -136,6 +136,7 @@ static void open_ancestors(tree* t, const char* key);
 static void close_reveals(tree* t);
 static char* dup(const char* s);
 static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag, b8 dim);
+static jv shown_text(jv v, i32 room, b8* cut);
 static void mark_matches(tree* t, grid* g, i32 x, i32 y, i32 end, const char* s, usz len, u8 flag);
 static b8 derived_row(tree* t, i32 r);
 static void path_display(tree* t, i32 r, b8 label, strbuf* b);
@@ -1094,9 +1095,10 @@ static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag
     snprintf(tag, sizeof(tag), "%s", view_name(w->view));
   }
 
+  b8 cut = 0;
   if (!jv_is_valid(text)) {
     jv_free(text);
-    text = jv_dump_string(jv_copy(w->value), 0);
+    text = shown_text(w->value, max_x - x, &cut);
     tag[0] = '\0';
   }
 
@@ -1116,11 +1118,32 @@ static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag
     b8 quoted = jv_get_kind(w->value) == JV_KIND_STRING;
     usz len = (usz)jv_string_length_bytes(jv_copy(text));
 
-    mark_matches(t, g, at + quoted, y, x, jv_string_value(text) + quoted, len - 2 * quoted, flag);
+    usz inner = len - quoted - (cut ? 0 : quoted);
+
+    mark_matches(t, g, at + quoted, y, x, jv_string_value(text) + quoted, inner, flag);
   }
 
   jv_free(text);
   if (tag_w) grid_put(g, x + 2, y, max_x, tag, strlen(tag), STYLE_EMPTY | flag);
+}
+
+/* v as jq prints it; a string longer than room columns could show is
+ * printed only as far as they reach, without its closing quote, so that a
+ * long one costs no more than a short one. */
+static jv shown_text(jv v, i32 room, b8* cut) {
+  usz len = jv_get_kind(v) == JV_KIND_STRING ? (usz)jv_string_length_bytes(jv_copy(v)) : 0;
+  usz keep = (usz)(room > 0 ? room : 0) * 4 + 16;
+
+  *cut = len > keep;
+  if (!*cut) return jv_dump_string(jv_copy(v), 0);
+
+  const char* s = jv_string_value(v);
+  while (keep > 0 && ((u8)s[keep] & 0xc0) == 0x80) keep--;
+
+  jv text = jv_dump_string(jv_string_sized(s, (i32)keep), 0);
+  jv open = jv_string_sized(jv_string_value(text), jv_string_length_bytes(jv_copy(text)) - 1);
+  jv_free(text);
+  return open;
 }
 
 /* restyles the cells showing the pattern in the len bytes of s, drawn from
