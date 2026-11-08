@@ -32,6 +32,7 @@ static void test_fallback(void);
 static void test_tab_closes(void);
 static void test_builtins(void);
 static void test_keys_then_builtins(void);
+static void test_opens_while_typing(void);
 static void test_merge_takes_lists(void);
 
 static grid* screen;
@@ -135,8 +136,6 @@ static void test_keys_filtered(void) {
   ASSERT_STREQ(item(a, 1), "ok boolean");
   CHECK(item(a, 2) == NULL);
   type(a, "users[].");
-  CHECK(item(a, 0) == NULL);
-  press(a, CTRL_SPACE);
   ASSERT_STREQ(item(a, 0), "\xe2\x94\x83id number");
   ASSERT_STREQ(item(a, 3), "tags array");
   type(a, "s");
@@ -283,6 +282,26 @@ static void test_keys_then_builtins(void) {
   app_free(a);
 }
 
+static void test_opens_while_typing(void) {
+  app* a = open_app("tests/data/sample.json", ".users | ");
+
+  if (!a) return;
+
+  CHECK(item(a, 0) == NULL);
+  press(a, 'm');
+  ASSERT_STREQ(item(a, 0), "\xe2\x94\x83map /1");
+  press(a, ESC);
+  press(a, 'a');
+  CHECK(item(a, 0) == NULL);
+  press(a, APP_KEY_BACKSPACE);
+  CHECK(item(a, 0) == NULL);
+  type(a, "ap(.");
+  ASSERT_STREQ(item(a, 0), "\xe2\x94\x83id number");
+  type(a, "id) | 1.");
+  CHECK(item(a, 0) == NULL);
+  app_free(a);
+}
+
 /* merging gives back every list it was handed. */
 static void test_merge_takes_lists(void) {
   jv list = jv_parse("[[\"name\", \"string\"], [\"age\", \"number\"]]");
@@ -306,6 +325,7 @@ static void test_merge_takes_lists(void) {
    f(test_tab_closes)          \
    f(test_builtins)            \
    f(test_keys_then_builtins)  \
+   f(test_opens_while_typing)  \
    f(test_merge_takes_lists)
 #define TEST_HELPER_MAIN
 

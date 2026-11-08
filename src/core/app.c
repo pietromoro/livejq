@@ -78,6 +78,8 @@ struct app {
   b8 falling_back;      /* that probe is the fallback */
   char* probed;         /* the probe the popup's keys came from */
   complete_kind listed; /* what the popup holds */
+  b8 quiet;             /* esc closed it, so typing the same word does not open it */
+  usz quiet_start;      /* where that word starts */
   jv builtins;          /* for the popup */
   popup pop;
 
@@ -124,6 +126,7 @@ static void reload(app* a);
 static void hand_inputs(app* a, jv inputs);
 static b8 completion_key(app* a, app_event ev);
 static void open_completion(app* a);
+static void auto_open(app* a, u32 key);
 static void refresh_completion(app* a);
 static void close_completion(app* a);
 static void accept(app* a, i64 now);
@@ -410,6 +413,8 @@ static void key(app* a, app_event ev) {
 
   b8 changed = edit(&a->query, ev.key);
   if (a->completing) refresh_completion(a);
+  else if (changed) auto_open(a, ev.key);
+
   if (!changed) return;
 
   a->edited = 1;
@@ -944,6 +949,8 @@ static void hand_inputs(app* a, jv inputs) {
  * one of them. */
 static b8 completion_key(app* a, app_event ev) {
   if (ev.key == ESC) {
+    a->quiet = 1;
+    a->quiet_start = a->ctx.start;
     close_completion(a);
     return 1;
   }
@@ -959,6 +966,23 @@ static b8 completion_key(app* a, app_event ev) {
 static void open_completion(app* a) {
   a->completing = 1;
   refresh_completion(a);
+}
+
+/* opens the popup on a key typed after a dot, or on a name typed where a
+ * function can be called, unless esc closed it on this word. */
+static void auto_open(app* a, u32 key) {
+  if (key < 0x20 || key == 0x7f || key >= 0x110000) return;
+
+  const char* q = a->query.text ? a->query.text : "";
+  complete_ctx c;
+  complete_at(q, a->query.len, a->query.cursor, &c);
+
+  b8 typed = a->query.cursor > c.start;
+  b8 wanted = c.kind == COMPLETE_KEY || (c.kind == COMPLETE_BUILTIN && typed);
+  b8 quiet = a->quiet && c.kind != COMPLETE_NONE && c.start == a->quiet_start;
+  complete_free(&c);
+  a->quiet = quiet;
+  if (wanted && !quiet) open_completion(a);
 }
 
 /* follows the word at the cursor: the builtins where a function can be

@@ -59,6 +59,7 @@ static app* open_app(const char* path, const char* query, b8 raw, b8 slurp, jv a
   return a;
 }
 
+/* then esc, closing the completion popup typing may have opened. */
 static void type(app* a, const char* s, i64 now) {
   app_event ev = { 0 };
 
@@ -68,6 +69,9 @@ static void type(app* a, const char* s, i64 now) {
     ev.key = (u8)*s++;
     app_feed(a, ev);
   }
+
+  ev.key = 0x1b;
+  app_feed(a, ev);
 }
 
 static void retype(app* a, const char* s) {
@@ -301,6 +305,8 @@ static void test_changed_only_when_shown(void) {
   CHECK(!app_feed(a, ev));
   ev.kind = EV_KEY;
   ev.key = 'k';
+  CHECK(app_feed(a, ev));
+  ev.key = 0x1b;
   CHECK(app_feed(a, ev));
   ev.kind = EV_TICK;
   ev.now_ms = 1000;
