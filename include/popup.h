@@ -13,8 +13,10 @@ typedef struct {
   i32* shown; /* indices of the items matching what is typed, best first */
   i32 n;      /* how many */
   i32 cursor;
-  i32 top;   /* first shown */
-  u8 style;  /* of the names */
+  i32 top;      /* first shown */
+  u8 style;     /* of the names */
+  i32 name_w;   /* columns of the longest name shown */
+  i32 detail_w; /* and detail */
 } popup;
 
 void popup_init(popup* p);

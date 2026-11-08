@@ -95,6 +95,16 @@ void popup_filter(popup* p, const char* typed, usz len) {
       p->shown[p->n++] = i;
   }
 
+  p->name_w = 0;
+  p->detail_w = 0;
+  for (i32 i = 0; i < p->n; i++) {
+    i32 nw = columns(name_at(p, p->shown[i]));
+    i32 dw = columns(detail_at(p, p->shown[i]));
+
+    if (nw > p->name_w) p->name_w = nw;
+    if (dw > p->detail_w) p->detail_w = dw;
+  }
+
   p->cursor = 0;
   p->top = 0;
 }
@@ -122,20 +132,9 @@ const char* popup_selected(const popup* p) {
 }
 
 void popup_render(popup* p, grid* g, i32 x, i32 y, i32 rows) {
-  i32 name_w = 0;
-  i32 detail_w = 0;
-
   if (p->n == 0 || rows < 1) return;
 
-  for (i32 i = 0; i < p->n; i++) {
-    i32 nw = columns(name_at(p, p->shown[i]));
-    i32 dw = columns(detail_at(p, p->shown[i]));
-
-    if (nw > name_w) name_w = nw;
-    if (dw > detail_w) detail_w = dw;
-  }
-
-  i32 w = name_w + detail_w + PADDING;
+  i32 w = p->name_w + p->detail_w + PADDING;
   if (w > g->w) w = g->w;
   if (x + w > g->w) x = g->w - w;
   if (x < 0) x = 0;
