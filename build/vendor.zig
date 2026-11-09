@@ -152,8 +152,8 @@ pub fn jq(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin
   const builtin_inc = run_embed.addOutputFileArg("builtin.inc");
 
   const generated = b.addWriteFiles();
-  const execute_c = generated.add("src/execute.c", patch.patched(b, jq_dir ++ "/src/execute.c", "build/patches/jq/execute.c.patch"));
-  const jv_c = generated.add("src/jv.c", patch.patched(b, jq_dir ++ "/src/jv.c", "build/patches/jq/jv.c.patch"));
+  const execute_c = generated.add("src/execute.c", patch.patched(b, jq_dir ++ "/src/execute.c", &.{"build/patches/jq/execute.c.patch"}));
+  const jv_c = generated.add("src/jv.c", patch.patched(b, jq_dir ++ "/src/jv.c", &.{ "build/patches/jq/jv.c.patch", "build/patches/jq/jv.c.heap.patch" }));
   _ = generated.addCopyFile(builtin_inc, "src/builtin.inc");
   _ = generated.add("src/version.h", "#define JQ_VERSION \"" ++ jq_version ++ "\"\n");
   _ = generated.add("src/config_opts.inc", "#define JQ_CONFIG \"livejq\"\n");
@@ -168,6 +168,8 @@ pub fn jq(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin
   mod.addCSourceFiles(.{ .root = b.path(jq_dir), .files = jq_sources, .flags = vendor_flags });
   mod.addCSourceFile(.{ .file = execute_c, .flags = vendor_flags });
   mod.addCSourceFile(.{ .file = jv_c, .flags = vendor_flags });
+  mod.addIncludePath(b.path("include"));
+  mod.addCSourceFile(.{ .file = b.path("src/heap/heap.c"), .flags = &.{ "-std=c99", "-Wall", "-Wextra", "-Wpedantic" } });
   if (target.result.os.tag == .windows) mod.linkSystemLibrary("shlwapi", .{});
 
   const lib = b.addLibrary(.{ .name = "jq", .root_module = mod });
@@ -208,7 +210,7 @@ pub fn pdcurses(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
     mod.addCSourceFiles(.{ .root = b.path(pdc_dir ++ "/wincon"), .files = pdc_port, .flags = vendor_flags });
   } else {
     const generated = b.addWriteFiles();
-    const disp_c = generated.add("pdcdisp.c", patch.patched(b, pdc_dir ++ "/vt/pdcdisp.c", "build/patches/pdcurses/pdcdisp.c.patch"));
+    const disp_c = generated.add("pdcdisp.c", patch.patched(b, pdc_dir ++ "/vt/pdcdisp.c", &.{"build/patches/pdcurses/pdcdisp.c.patch"}));
     mod.addIncludePath(b.path(pdc_dir ++ "/vt"));
     mod.addCSourceFiles(.{ .root = b.path(pdc_dir ++ "/vt"), .files = pdc_port[0..1] ++ pdc_port[2..], .flags = vendor_flags });
     mod.addCSourceFile(.{ .file = disp_c, .flags = vendor_flags });

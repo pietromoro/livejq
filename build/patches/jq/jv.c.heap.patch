@@ -1,0 +1,159 @@
+jq's values, the millions of small blocks a big input parses into, come from
+livejq's own allocator (src/heap/heap.c) instead of malloc: size classes in
+64 KB spans per thread, with no header per block, handing empty spans back to
+the system. only the allocations of values move, all of them made and freed
+in this file; jv_mem_alloc stays malloc, as jq frees some of its blocks with
+free().
+
+--- a/src/jv.c
++++ b/src/jv.c
+@@ -60,6 +60,9 @@
+ 
+ static const jv_refcnt JV_REFCNT_INIT = {1};
+ 
++void* heap_alloc(size_t n);
++void heap_free(void* p);
++
+ static void jvp_refcnt_inc(jv_refcnt* c) {
+   __atomic_fetch_add(&c->count, 1, __ATOMIC_RELAXED);
+ }
+@@ -151,7 +154,7 @@
+ } jvp_invalid;
+ 
+ jv jv_invalid_with_msg(jv err) {
+-  jvp_invalid* i = jv_mem_alloc(sizeof(jvp_invalid));
++  jvp_invalid* i = heap_alloc(sizeof(jvp_invalid));
+   i->refcnt = JV_REFCNT_INIT;
+   i->errmsg = err;
+ 
+@@ -558,7 +561,7 @@
+   /* The number of units needed is ceil(DECNUMDIGITS/DECDPUN)         */
+   int units = ((literal_length+DECDPUN-1)/DECDPUN);
+ 
+-  jvp_literal_number* n = jv_mem_alloc(
++  jvp_literal_number* n = heap_alloc(
+     sizeof(jvp_literal_number)
+     + sizeof(decNumberUnit) * units
+   );
+@@ -580,16 +583,16 @@
+   decNumberFromString(&n->num_decimal, literal, ctx);
+ 
+   if (ctx->status & DEC_Conversion_syntax) {
+-    jv_mem_free(n);
++    heap_free(n);
+     return JV_INVALID;
+   }
+   if (decNumberIsNaN(&n->num_decimal)) {
+     // Reject NaN with payload.
+     if (n->num_decimal.digits > 1 || *n->num_decimal.lsu != 0) {
+-      jv_mem_free(n);
++      heap_free(n);
+       return JV_INVALID;
+     }
+-    jv_mem_free(n);
++    heap_free(n);
+     return jv_number(NAN);
+   }
+ 
+@@ -640,7 +643,7 @@
+   char* literal = __atomic_load_n(&plit->literal_data, __ATOMIC_ACQUIRE);
+   if (literal == NULL) {
+     int len = jvp_dec_number_ptr(n)->digits + 15 /* 14 + NUL */;
+-    char* mine = jv_mem_alloc(len);
++    char* mine = heap_alloc(len);
+ 
+     // Preserve the actual precision as we have parsed it
+     // don't do decNumberTrim(pdec);
+@@ -650,7 +653,7 @@
+                                     __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+       literal = mine;
+     else
+-      jv_mem_free(mine);
++      heap_free(mine);
+   }
+ 
+   return literal;
+@@ -694,9 +697,9 @@
+   if (JVP_HAS_FLAGS(j, JVP_FLAGS_NUMBER_LITERAL) && jvp_refcnt_dec(j.u.ptr)) {
+     jvp_literal_number* n = jvp_literal_number_ptr(j);
+     if (n->literal_data) {
+-      jv_mem_free(n->literal_data);
++      heap_free(n->literal_data);
+     }
+-    jv_mem_free(n);
++    heap_free(n);
+   }
+ #endif
+ }
+@@ -839,7 +842,7 @@
+ }
+ 
+ static jvp_array* jvp_array_alloc(unsigned size) {
+-  jvp_array* a = jv_mem_alloc(sizeof(jvp_array) + sizeof(jv) * size);
++  jvp_array* a = heap_alloc(sizeof(jvp_array) + sizeof(jv) * size);
+   a->refcnt.count = 1;
+   a->length = 0;
+   a->alloc_length = size;
+@@ -1111,7 +1114,7 @@
+ }
+ 
+ static jvp_string* jvp_string_alloc(uint32_t size) {
+-  jvp_string* s = jv_mem_alloc(sizeof(jvp_string) + size + 1);
++  jvp_string* s = heap_alloc(sizeof(jvp_string) + size + 1);
+   s->refcnt.count = 1;
+   s->alloc_length = size;
+   return s;
+@@ -1170,7 +1173,7 @@
+ static void jvp_string_free(jv js) {
+   jvp_string* s = jvp_string_ptr(js);
+   if (jvp_refcnt_dec(&s->refcnt)) {
+-    jv_mem_free(s);
++    heap_free(s);
+   }
+ }
+ 
+@@ -1627,7 +1630,7 @@
+   // size must be a power of two
+   assert(size > 0 && (size & (size - 1)) == 0);
+ 
+-  jvp_object* obj = jv_mem_alloc(sizeof(jvp_object) +
++  jvp_object* obj = heap_alloc(sizeof(jvp_object) +
+                                  sizeof(struct object_slot) * size +
+                                  sizeof(int) * (size * 2));
+   obj->refcnt.count = 1;
+@@ -1730,7 +1733,7 @@
+     new_slot->value = slot->value;
+   }
+   // references are transported, just drop the old table
+-  jv_mem_free(jvp_object_ptr(object));
++  heap_free(jvp_object_ptr(object));
+   *objectp = new_object;
+   return 1;
+ }
+@@ -2034,7 +2037,7 @@
+           }
+           for (int i = 0; i < arr->length; i++)
+             pending[len++] = arr->elements[i];
+-          jv_mem_free(arr);
++          heap_free(arr);
+         }
+         break;
+       case JV_KIND_OBJECT:
+@@ -2051,7 +2054,7 @@
+               pending[len++] = slot->value;
+             }
+           }
+-          jv_mem_free(jvp_object_ptr(j));
++          heap_free(jvp_object_ptr(j));
+         }
+         break;
+       case JV_KIND_INVALID:
+@@ -2061,7 +2064,7 @@
+             pending = jv_mem_realloc(pending, cap * sizeof(jv));
+           }
+           pending[len++] = ((jvp_invalid*)j.u.ptr)->errmsg;
+-          jv_mem_free(j.u.ptr);
++          heap_free(j.u.ptr);
+         }
+         break;
+       case JV_KIND_STRING:

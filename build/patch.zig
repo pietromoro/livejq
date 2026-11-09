@@ -1,12 +1,18 @@
 const std = @import("std");
 
-// applies a unified diff to a file, both under the build root, and returns the
-// patched text. a hunk's context and removed lines must match where it says,
-// shifted only by what the hunks before it added or removed, so a submodule
-// bump that moves the code fails the build instead of patching the wrong spot.
-// anything before the first hunk is free text, saying why the patch exists.
-pub fn patched(b: *std.Build, path: []const u8, patch_path: []const u8) []const u8 {
-  const src = read(b, path);
+// applies unified diffs to a file, all under the build root, each to what the
+// ones before it made, and returns the patched text. a hunk's context and
+// removed lines must match where it says, shifted only by what the hunks
+// before it added or removed, so a submodule bump that moves the code fails
+// the build instead of patching the wrong spot. anything before the first
+// hunk is free text, saying why the patch exists.
+pub fn patched(b: *std.Build, path: []const u8, patch_paths: []const []const u8) []const u8 {
+  var src = read(b, path);
+  for (patch_paths) |p| src = apply(b, path, src, p);
+  return src;
+}
+
+fn apply(b: *std.Build, path: []const u8, src: []const u8, patch_path: []const u8) []const u8 {
   const diff = read(b, patch_path);
   var out: std.ArrayList(u8) = .empty;
   const body = if (std.mem.endsWith(u8, src, "\n")) src[0 .. src.len - 1] else src;
