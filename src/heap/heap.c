@@ -30,6 +30,8 @@
 #define FINE      (FINE_MAX / 8)
 #define CLASSES   (FINE + (SMALL_MAX - FINE_MAX) / 64 + 1)
 #define PAGE      4096
+#define SPARSE    8  /* a partial span is taken again once 1/8 or less is in use */
+#define SCAN      16 /* partial spans looked at for one */
 
 typedef struct block {
   struct block* next;
@@ -71,6 +73,7 @@ static void make_key(void) { pthread_key_create(&exit_key, heap_exit); }
 static void* large(usz n);
 static void* take(span* s);
 static span* next_span(heap* h, i32 c);
+static span* sparse(heap* h, i32 c);
 static span* new_span(heap* h, i32 c);
 static void drain(heap* h);
 static void settle(heap* h, span* s);
@@ -186,12 +189,29 @@ static void* take(span* s) {
 static span* next_span(heap* h, i32 c) {
   drain(h);
 
-  span* s = h->partial[c];
+  span* s = sparse(h, c);
   if (s) drop_partial(h, s);
   else s = new_span(h, c);
 
   h->current[c] = s;
   return s;
+}
+
+/* a partial span mostly free. one fuller is left to empty: an input parsed
+ * while the one before is still alive would otherwise fill the gaps the old
+ * one leaves, and every span would hold two generations, none ever empty. */
+static span* sparse(heap* h, i32 c) {
+  i32 left = SCAN;
+
+  for (span * s = h->partial[c]; s && left > 0; s = s->next) {
+    usz blocks = (SPAN - HEADER) / s->size;
+
+    if ((usz)__atomic_load_n(&s->used, __ATOMIC_RELAXED) * SPARSE <= blocks) return s;
+
+    left--;
+  }
+
+  return NULL;
 }
 
 static span* new_span(heap* h, i32 c) {

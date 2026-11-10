@@ -28,6 +28,7 @@ static void test_reuse(void);
 static void test_other_thread_frees(void);
 static void test_dead_thread_blocks(void);
 static void test_stress(void);
+static void test_generations(void);
 
 static void fill(void* p, usz n, u8 seed) {
   for (usz i = 0; i < n; i++) ((u8*)p)[i] = (u8)(seed + i);
@@ -179,13 +180,44 @@ static void test_gives_memory_back(void) {
   free(b.blocks);
 }
 
+/* each generation is made while the one before is alive, then that one is
+ * freed, as a reload does: memory stays at two generations, not growing. */
+static void test_generations(void) {
+  batch old = { calloc(MANY, sizeof(void*)), MANY };
+  batch young = { calloc(MANY, sizeof(void*)), MANY };
+
+  alloc_batch(&old);
+  alloc_batch(&young);
+  free_batch(&old);
+
+  i64 settled = rss_kb();
+  for (i32 round = 0; round < 30; round++) {
+    batch spare = old;
+
+    old = young;
+    young = spare;
+    alloc_batch(&young);
+    free_batch(&old);
+  }
+
+  i64 after = rss_kb();
+  if (settled >= 0 && after - settled > settled / 20)
+    FAIL("rss grew from %d kB to %d kB over 30 generations", (i32)settled, (i32)after);
+  else CHECK(1);
+
+  free_batch(&young);
+  free(old.blocks);
+  free(young.blocks);
+}
+
 #define TESTS(f)                \
    f(test_gives_memory_back)    \
    f(test_sizes)                \
    f(test_reuse)                \
    f(test_other_thread_frees)   \
    f(test_dead_thread_blocks)   \
-   f(test_stress)
+   f(test_stress)               \
+   f(test_generations)
 #define TEST_HELPER_MAIN
 
 /* curufmt skip translation-unit-order */
