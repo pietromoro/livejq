@@ -18,6 +18,7 @@ static void test_wide_clipped(void);
 static void test_wide_overwritten(void);
 static void test_wide_fit(void);
 static void test_editor_wide(void);
+static void test_marks(void);
 
 /* row y with each tail as '>' and each blank as '.'. */
 static const char* row(grid* g, i32 y) {
@@ -56,7 +57,7 @@ static void test_wide_put(void) {
 
   char buf[64];
   grid_line(g, 0, buf, sizeof(buf));
-  ASSERT_STREQ(buf, "a" CJK "b" EMOJI);
+  ASSERT_STREQ(buf, "a" CJK "b" ACUTE EMOJI);
   grid_free(g);
 }
 
@@ -120,13 +121,36 @@ static void test_editor_wide(void) {
   grid_free(g);
 }
 
+/* a mark joins the character before it, two at most, and goes with it. */
+static void test_marks(void) {
+  grid* g = grid_new(6, 1);
+  char buf[64];
+
+  ASSERT_EQ(grid_put(g, 0, 0, 6, ACUTE "e" ACUTE ACUTE ACUTE CJK ACUTE, 14, STYLE_NORMAL), 3);
+  ASSERT_STREQ(row(g, 0), "e" CJK ">...");
+  ASSERT_EQ(grid_at(g, 0, 0).marks[0], 0x301);
+  ASSERT_EQ(grid_at(g, 0, 0).marks[1], 0x301);
+  ASSERT_EQ(grid_at(g, 1, 0).marks[0], 0x301);
+  grid_line(g, 0, buf, sizeof(buf));
+  ASSERT_STREQ(buf, "e" ACUTE ACUTE CJK ACUTE);
+
+  grid_put(g, 0, 0, 6, "x", 1, STYLE_NORMAL);
+  ASSERT_EQ(grid_at(g, 0, 0).marks[0], 0);
+  grid_put(g, 2, 0, 6, "y", 1, STYLE_NORMAL);
+  ASSERT_EQ(grid_at(g, 1, 0).marks[0], 0);
+  grid_line(g, 0, buf, sizeof(buf));
+  ASSERT_STREQ(buf, "x y");
+  grid_free(g);
+}
+
 #define TESTS(f)            \
    f(test_widths)           \
    f(test_wide_put)         \
    f(test_wide_clipped)     \
    f(test_wide_overwritten) \
    f(test_wide_fit)         \
-   f(test_editor_wide)
+   f(test_editor_wide)      \
+   f(test_marks)
 #define TEST_HELPER_MAIN
 
 /* curufmt skip translation-unit-order */

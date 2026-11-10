@@ -9,6 +9,7 @@
 
 static void set(grid* g, i32 x, i32 y, u32 c, u8 st);
 static void put_wide(grid* g, i32 x, i32 y, u32 c, u8 st);
+static void add_mark(cell* at, u32 mark);
 static void unpair(grid* g, i32 x, i32 y);
 
 grid* grid_new(i32 w, i32 h) {
@@ -86,12 +87,14 @@ i32 grid_put(grid* g, i32 x, i32 y, i32 max_x, const char* s, usz len, u8 st) {
   if (max_x > g->w) max_x = g->w;
   if (y < 0 || y >= g->h) return x;
 
+  i32 last = -1; /* the column of the character a mark joins */
   while (i < len && x < max_x) {
     u32 c = utf8_next(s, len, &i);
 
     if (c < 0x20 || c == 0x7f) c = 0xfffd;
 
     i32 w = utf8_width(c);
+    if (w == 0 && last >= 0) add_mark(&g->cells[y * g->w + last], c);
     if (w == 0) continue;
 
     if (w == 2 && x + 1 >= max_x) {
@@ -103,6 +106,7 @@ i32 grid_put(grid* g, i32 x, i32 y, i32 max_x, const char* s, usz len, u8 st) {
     if (w == 2) put_wide(g, x, y, c, st);
     else if (x >= 0) set(g, x, y, c, st);
 
+    last = x;
     x += w;
   }
 
@@ -146,6 +150,9 @@ void grid_line(const grid* g, i32 y, char* buf, usz cap) {
     if (c == GRID_TAIL) continue;
 
     n += utf8_put(c, buf + n);
+    for (i32 k = 0; k < GRID_MARKS && g->cells[y * g->w + x].marks[k] && n + 4 < cap; k++)
+      n += utf8_put(g->cells[y * g->w + x].marks[k], buf + n);
+
     if (c != ' ') keep = n;
   }
 
@@ -211,6 +218,7 @@ static void set(grid* g, i32 x, i32 y, u32 c, u8 st) {
   cell* at = &g->cells[y * g->w + x];
 
   unpair(g, x, y);
+  memset(at, 0, sizeof(*at));
   at->ch = c;
   at->style = st;
 }
@@ -227,15 +235,29 @@ static void put_wide(grid* g, i32 x, i32 y, u32 c, u8 st) {
 
   unpair(g, x, y);
   unpair(g, x + 1, y);
+  memset(&row[x], 0, sizeof(cell) * 2);
   row[x].ch = c;
   row[x].style = st;
   row[x + 1].ch = GRID_TAIL;
   row[x + 1].style = st;
 }
 
+static void add_mark(cell* at, u32 mark) {
+  for (i32 k = 0; k < GRID_MARKS; k++) {
+    if (at->marks[k]) continue;
+
+    at->marks[k] = mark;
+    return;
+  }
+}
+
 static void unpair(grid* g, i32 x, i32 y) {
   cell* row = &g->cells[y * g->w];
 
-  if (row[x].ch == GRID_TAIL && x > 0) row[x - 1].ch = ' ';
+  if (row[x].ch == GRID_TAIL && x > 0) {
+    memset(row[x - 1].marks, 0, sizeof(row[x - 1].marks));
+    row[x - 1].ch = ' ';
+  }
+
   if (row[x].ch != GRID_TAIL && x + 1 < g->w && row[x + 1].ch == GRID_TAIL) row[x + 1].ch = ' ';
 }

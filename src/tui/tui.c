@@ -288,6 +288,18 @@ static void blit(const grid* g) {
       wc[1] = 0;
       setcchar(&cc, wc, at & ~A_COLOR, (i16)PAIR_NUMBER(at), NULL);
       mvadd_wch(y, x, &cc);
+      /* curses cannot draw a mark joined to a wide character: it trips on
+       * the cell the character spills into. those go without. */
+      b8 wide = x + 1 < g->w && grid_at(g, x + 1, y).ch == GRID_TAIL;
+      if (!c.marks[0] || wide) continue;
+
+      for (i32 k = 0; k < GRID_MARKS && c.marks[k]; k++) {
+        if (sizeof(wchar_t) < 4 && c.marks[k] > 0xffff) continue;
+
+        wc[0] = (wchar_t)c.marks[k];
+        setcchar(&cc, wc, at & ~A_COLOR, (i16)PAIR_NUMBER(at), NULL);
+        add_wch(&cc);
+      }
     }
   }
 

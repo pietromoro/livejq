@@ -45,10 +45,12 @@ typedef enum {
 } style;
 
 /* the cell right of a character two columns wide. */
-#define GRID_TAIL 0x110000
+#define GRID_TAIL  0x110000
+#define GRID_MARKS 2 /* combining marks a cell keeps, the rest are left out */
 
 typedef struct {
   u32 ch;
+  u32 marks[GRID_MARKS]; /* drawn over ch, 0 past the last */
   u8 style;
 } cell;
 
@@ -73,8 +75,8 @@ void grid_restyle(grid* g, i32 x, i32 max_x, i32 y, u8 st);
 void grid_box(grid* g, i32 x, i32 y, i32 w, i32 h, u8 st);
 /* Writes UTF-8 text from column x, clipped at max_x. A character two
  * columns wide takes its cell and a GRID_TAIL after it, or a blank when only
- * one is left; one of no width is left out. Returns the column after the
- * last one written. */
+ * one is left; a combining mark joins the character before it, and is left
+ * out when there is none. Returns the column after the last one written. */
 i32 grid_put(grid* g, i32 x, i32 y, i32 max_x, const char* s, usz len, u8 st);
 /* Like grid_put, but ends with an ellipsis when s does not fit. */
 i32 grid_put_fit(grid* g, i32 x, i32 y, i32 max_x, const char* s, usz len, u8 st);
@@ -87,7 +89,8 @@ i32 utf8_width(u32 c);
  * it; U+FFFD for a malformed one. */
 u32 utf8_next(const char* s, usz len, usz* i);
 cell grid_at(const grid* g, i32 x, i32 y);
-/* Row y as UTF-8 without trailing blanks, tails left out. */
+/* Row y as UTF-8 without trailing blanks, tails left out, marks after their
+ * character. */
 void grid_line(const grid* g, i32 y, char* buf, usz cap);
 /* Writes c as UTF-8 into out, which has room for 4 bytes. Returns the byte
  * count. */
