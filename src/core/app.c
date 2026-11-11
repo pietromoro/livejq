@@ -8,6 +8,7 @@
 #include "app.h"
 #include "clip.h"
 #include "complete.h"
+#include "detail.h"
 #include "editor.h"
 #include "eval.h"
 #include "help.h"
@@ -36,6 +37,9 @@
 #define ESC         0x1b
 #define PROBE_HITS  64 /* inputs a probe reports before it stops */
 #define POPUP_ROWS  8
+#define DETAIL_ROWS 4 /* most rows the whole of a cut string takes under the tree */
+#define MIN_TREE    3 /* rows the tree keeps, the detail gives way below */
+#define H_LINE      "\xe2\x94\x80"
 
 struct app {
   const char* path;
@@ -59,6 +63,7 @@ struct app {
   char note[64];   /* on the status bar until the next key */
   i32 w;           /* columns of the last render */
   i32 h;           /* and rows */
+  i32 tree_rows;   /* the tree's rows in the last render */
 
   sidebar side;
   i64 scan_at;       /* next look at the query folder */
@@ -136,6 +141,8 @@ static void submit(app* a);
 static b8 apply(app* a);
 static b8 failed(const app* a);
 static void render_query(app* a, grid* g);
+static void render_tree(app* a, grid* g, i32 left, i32 rows);
+static i32 render_detail(app* a, grid* g, i32 left, i32 rows);
 static void render_popup(app* a, grid* g);
 static void render_search(app* a, grid* g);
 static void render_status(app* a, grid* g);
@@ -284,16 +291,9 @@ void app_render(app* a, grid* g) {
   if (a->has_result && n == 0 && jv_get_kind(a->error) == JV_KIND_NULL)
     grid_put_fit(g, left, TREE_Y, g->w - 1, "(no output)", 11, STYLE_EMPTY);
 
-  tree_render(
-    a->tree, g,
-    left,
-    TREE_Y,
-    g->w - 1,
-    g->h - TREE_Y - 2,
-    a->stale || a->missing,
-    a->focus == FOCUS_TREE
-  );
-
+  a->tree_rows = g->h - TREE_Y - 2;
+  render_tree(a, g, left, a->tree_rows);
+  a->tree_rows = render_detail(a, g, left, a->tree_rows);
   render_status(a, g);
   render_popup(a, g);
   if (a->searching) render_search(a, g);
@@ -627,7 +627,7 @@ static b8 mouse(app* a, app_event ev) {
   app_focus was = a->focus;
   i32 side_w = sidebar_width(&a->side, a->w);
   b8 in_side = ev.x < side_w && ev.y >= TREE_Y - 1 && ev.y < a->h - 2;
-  b8 in_tree = !in_side && ev.y >= TREE_Y && ev.y < a->h - 2;
+  b8 in_tree = !in_side && ev.y >= TREE_Y && ev.y < TREE_Y + a->tree_rows;
 
   if (ev.mouse != APP_MOUSE_PRESS && a->help)
     return help_scroll(&a->help_at, ev.mouse == APP_MOUSE_WHEEL_UP ? -WHEEL_ROWS : WHEEL_ROWS);
@@ -1205,6 +1205,49 @@ static void render_query(app* a, grid* g) {
 
   g->cursor_x = x;
   g->cursor_y = 1;
+}
+
+static void render_tree(app* a, grid* g, i32 left, i32 rows) {
+  tree_render(
+    a->tree, g, left,
+    TREE_Y,
+    g->w - 1,
+    rows,
+    a->stale || a->missing,
+    a->focus == FOCUS_TREE
+  );
+}
+
+/* the whole of the cursor's string under a rule at the tree's bottom, when
+ * the tree cut it short and keeps MIN_TREE rows. Returns the rows left to
+ * the tree, redrawn into them. */
+static i32 render_detail(app* a, grid* g, i32 left, i32 rows) {
+  if (!tree_cut(a->tree)) return rows;
+
+  jv s = tree_value(a->tree);
+  const char* text = jv_string_value(s);
+  usz len = (usz)jv_string_length_bytes(jv_copy(s));
+  i32 n = detail_render(NULL, left, 0, g->w - 1, DETAIL_ROWS, text, len);
+  if (n == 0 || rows - n - 1 < MIN_TREE) {
+    jv_free(s);
+    return rows;
+  }
+
+  for (i32 y = TREE_Y; y < TREE_Y + rows; y++)
+    grid_fill_span(g, left - TREE_X, g->w, y, STYLE_NORMAL);
+
+  rows -= n + 1;
+  render_tree(a, g, left, rows);
+
+  i32 y = TREE_Y + rows;
+  for (i32 x = left - TREE_X; x < g->w; x++) grid_put(g, x, y, g->w, H_LINE, 3, STYLE_BORDER);
+
+  char label[32];
+  snprintf(label, sizeof(label), " %d chars ", jv_string_length_codepoints(jv_copy(s)));
+  grid_puts(g, g->w - 2 - (i32)strlen(label), y, label, STYLE_EMPTY);
+  detail_render(g, left, y + 1, g->w - 1, n, text, len);
+  jv_free(s);
+  return rows;
 }
 
 /* the popup under the query box, its names lined up with the word. */

@@ -9,6 +9,7 @@
 #include "defines.h"
 #include "loader.h"
 #include "thread.h"
+#include "tree.h"
 #include "views.h"
 
 #include "test_helper.in"
@@ -45,6 +46,8 @@ static u8 style_at(app* a, i32 x, i32 n);
 static b8 copied(app* a, const char* text);
 static void test_focus(void);
 static void test_long_string(void);
+static void test_detail(void);
+static void test_cut_needs_rows(void);
 static void test_click_focuses(void);
 static void test_click_picks_lines(void);
 static void test_wheel_scrolls(void);
@@ -1267,6 +1270,53 @@ static void test_long_string(void) {
   app_free(a);
 }
 
+static void test_detail(void) {
+  app* a = open_app(
+    "tests/data/sample.json",
+    "select(.ok) | {bio: (\"lorem ipsum dolor \" * 10), tabs: (\"a\\tb\\n\" + \"x\" * 90), huge: (\"word \" * 100), short: \"hi\"}"
+  );
+  if (!a) return;
+
+  press(a, '\t');
+  press(a, 'j');
+  CHECK(strstr(row(a, 6), " 180 chars ") != NULL);
+  ASSERT_STREQ(
+    row(a, 7),
+    "lorem ipsum dolor lorem ipsum dolor lorem ipsum dolor lorem ipsum dolor lorem"
+  );
+  ASSERT_STREQ(
+    row(a, 8),
+    "ipsum dolor lorem ipsum dolor lorem ipsum dolor lorem ipsum dolor lorem ipsum"
+  );
+  ASSERT_STREQ(row(a, 9), "dolor lorem ipsum dolor");
+  ASSERT_EQ(style_at(a, 0, 7), STYLE_STRING);
+
+  press(a, 'j');
+  CHECK(strstr(row(a, 7), " 94 chars ") != NULL);
+  CHECK(strncmp(row(a, 8), "a\\tb\\nxxx", 9) == 0);
+  ASSERT_EQ(style_at(a, 0, 8), STYLE_STRING);
+  ASSERT_EQ(style_at(a, 1, 8), STYLE_EMPTY);
+  ASSERT_EQ(utf8_columns(row(a, 8), strlen(row(a, 8))), W - LEFT - 1);
+  ASSERT_EQ(strlen(row(a, 9)), 19);
+  CHECK(!mouse(a, APP_MOUSE_PRESS, 10, TOP + 8));
+  CHECK(selected(a, 2));
+
+  press(a, 'j');
+  CHECK(strstr(row(a, 5), " 500 chars ") != NULL);
+  ASSERT_STREQ(
+    row(a, 6),
+    "word word word word word word word word word word word word word word word"
+  );
+  ASSERT_STREQ(
+    row(a, 9),
+    "word word word word word word word word word word word word word word word w\xe2\x80\xa6"
+  );
+
+  press(a, 'j');
+  ASSERT_STREQ(row(a, 5), "");
+  app_free(a);
+}
+
 static void test_search_marks(void) {
   app* a = open_app("tests/data/sample.json", ".");
 
@@ -1394,6 +1444,21 @@ static void test_pipe_path(void) {
   app_free(a);
 }
 
+/* a tree given no rows shows no string, cut or not. */
+static void test_cut_needs_rows(void) {
+  tree* t = tree_new();
+  grid* g = grid_new(W, H);
+
+  tree_set(t, JV_ARRAY(jv_string("lorem ipsum dolor sit amet, consectetur adipiscing elit")));
+  tree_render(t, g, LEFT, TOP, 20, 1, 0, 1);
+  CHECK(tree_cut(t));
+
+  tree_render(t, g, LEFT, TOP, 20, 0, 0, 1);
+  CHECK(!tree_cut(t));
+  grid_free(g);
+  tree_free(t);
+}
+
 #define TESTS(f)                          \
    f(test_focus)                          \
    f(test_click_focuses)                  \
@@ -1428,6 +1493,8 @@ static void test_pipe_path(void) {
    f(test_search_reveals)                 \
    f(test_search_values)                  \
    f(test_long_string)                    \
+   f(test_detail)                         \
+   f(test_cut_needs_rows)                 \
    f(test_search_marks)                   \
    f(test_copy_value)                     \
    f(test_copy_path)                      \

@@ -80,6 +80,7 @@ struct tree {
   i32 cursor;
   i32 top;
   i32 page;
+  b8 cut; /* the cursor's string did not fit its row in the last render */
 
   view_ctx ctx;
 
@@ -308,6 +309,7 @@ b8 tree_click(tree* t, i32 x, i32 n, b8 again) {
 void tree_render(tree* t, grid* g, i32 x, i32 y, i32 max_x, i32 h, b8 dim, b8 focused) {
   u8 selected = focused ? STYLE_SELECTED : STYLE_SELECTED_IDLE;
 
+  t->cut = 0;
   if (h < 1) return;
 
   t->page = h;
@@ -328,6 +330,8 @@ void tree_render(tree* t, grid* g, i32 x, i32 y, i32 max_x, i32 h, b8 dim, b8 fo
     render_row(t, g, r, x, y + i, max_x, flag, dim);
   }
 }
+
+b8 tree_cut(const tree* t) { return t->cut; }
 
 jv tree_value(const tree* t) {
   if (t->nrows == 0) return jv_invalid();
@@ -1114,6 +1118,12 @@ static void render_row(tree* t, grid* g, i32 r, i32 x, i32 y, i32 max_x, u8 flag
     (usz)jv_string_length_bytes(jv_copy(text)),
     (dim ? STYLE_DIM : kind_style(w->value)) | flag
   );
+  if (r == t->cursor && !tag[0] && jv_get_kind(w->value) == JV_KIND_STRING) {
+    usz len = (usz)jv_string_length_bytes(jv_copy(text));
+
+    t->cut = cut || at + utf8_columns(jv_string_value(text), len) > max_x;
+  }
+
   if (marks && !tag[0]) {
     b8 quoted = jv_get_kind(w->value) == JV_KIND_STRING;
     usz len = (usz)jv_string_length_bytes(jv_copy(text));
