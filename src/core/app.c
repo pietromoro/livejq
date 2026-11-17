@@ -1340,7 +1340,7 @@ static void render_status(app* a, grid* g) {
   i32 keep = erred ? utf8_columns(mid, mid_len) : MIN_PATH;
   u8 mid_style = erred ? STYLE_STATUS_ERROR : a->note[0] ? STYLE_STATUS : STYLE_STATUS_FAINT;
   char info[160];
-  times(a, info, sizeof(info), end - x - utf8_columns(a->name, strlen(a->name)) - 2 - keep);
+  times(a, info, sizeof(info), end - x - utf8_columns(a->name, strlen(a->name)) - 4 - keep);
   right = end - utf8_columns(info, strlen(info));
 
   name_w = utf8_columns(a->name, strlen(a->name));

@@ -704,13 +704,8 @@ static void test_watch_missing_file(void) {
   const char* dir = getenv("TMPDIR");
   char path[512];
 
-  snprintf(
-    path,
-    sizeof(path),
-    "%s/livejq-missing-%" PRId64 ".json",
-    dir ? dir : "/tmp",
-    clock_us()
-  );
+  /* short, so the name leaves the reason room to be cut. */
+  snprintf(path, sizeof(path), "%s/m%" PRId64 ".json", dir ? dir : "/tmp", clock_us() % 100000);
   write_file(path, "{\"a\":true}");
 
   app* a = open_watched(path, ".", 1000);
@@ -724,6 +719,18 @@ static void test_watch_missing_file(void) {
   CHECK(strstr(line(a, H - 2), " MISSING ") == line(a, H - 2));
   CHECK(strstr(line(a, H - 2), strerror(ENOENT)) != NULL);
   ASSERT_EQ(grid_at(screen, 1, H - 2).style, STYLE_PILL_ERROR);
+  for (i32 w = 40; w <= 120; w++) {
+    grid* g = grid_new(w, H);
+
+    app_render(a, g);
+
+    char buf[1024];
+    grid_line(g, H - 2, buf, sizeof(buf));
+    if (strstr(buf, " mod ")) CHECK(strstr(buf, strerror(ENOENT)) != NULL);
+
+    grid_free(g);
+  }
+
   CHECK(!tick(a, 2000));
 
   write_file(path, "{\"a\":false}");
