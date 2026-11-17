@@ -8,6 +8,9 @@
 #include "eval.h"
 #include "thread.h"
 
+#define AT_TOP    " at <top-level>, line "
+#define AT_COLUMN ", column "
+
 /* the requests of one kind, queries or probes. */
 typedef struct {
   u64 submitted;
@@ -61,6 +64,7 @@ static void collect_hit(void* data, jv msg);
 static b8 key_list(jv v);
 static void ignore_msg(void* data, jv msg);
 static jv error_text(jv msg);
+static jv compile_message(const char* s);
 
 void jq_set_cancel_flag(jq_state* jq, i32* flag);
 
@@ -362,10 +366,34 @@ static void collect_error(void* data, jv msg) {
     const char* s = jv_string_value(msg);
 
     if (strncmp(s, "jq: ", 4) == 0) s += 4;
-    *first = jv_string(s);
+    *first = compile_message(s);
   }
 
   jv_free(msg);
+}
+
+/* jq's "error: MSG at <top-level>, line L, column C:" as "column C: MSG",
+ * so the place survives a cut; the line is said only past the first.
+ * Text in any other shape stays as it is. */
+static jv compile_message(const char* s) {
+  if (strncmp(s, "error: ", 7) == 0) s += 7;
+
+  const char* at = strstr(s, AT_TOP);
+  if (!at) return jv_string(s);
+
+  char* end;
+  i32 line = (i32)strtol(at + strlen(AT_TOP), &end, 10);
+  i32 column = 0;
+  if (strncmp(end, AT_COLUMN, strlen(AT_COLUMN)) == 0)
+    column = (i32)strtol(end + strlen(AT_COLUMN), &end, 10);
+
+  if (*end != ':') return jv_string(s);
+
+  i32 len = (i32)(at - s);
+  if (!column) return jv_string_fmt("line %d: %.*s%s", line, len, s, end + 1);
+  if (line > 1) return jv_string_fmt("line %d, column %d: %.*s%s", line, column, len, s, end + 1);
+
+  return jv_string_fmt("column %d: %.*s%s", column, len, s, end + 1);
 }
 
 /* keeps what a probe tagged, and stops the job once cap are kept. */

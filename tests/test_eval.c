@@ -1,4 +1,5 @@
 /* eval tests - probes reporting through the debug callback. */
+#include <stdio.h>
 #include <string.h>
 
 #include "thread.h"
@@ -20,6 +21,7 @@ static void test_probe_compile_error(void);
 static void test_probe_ignores_debug(void);
 static void test_probe_first_input(void);
 static void test_query_stops_probe(void);
+static void test_compile_messages(void);
 static void test_cap_keeps_inputs(void);
 
 static eval_result probe(eval* e, const char* q, usz cap) {
@@ -131,6 +133,44 @@ static void test_query_stops_probe(void) {
   eval_free(e);
 }
 
+/* the place first, the line only past the first, no "error: ". the
+ * query and its caret follow on the next lines, as jq gives them. */
+static void test_compile_messages(void) {
+  static const char* const cases[][2] = {
+      { ". | ]", "column 5: syntax error, unexpected INVALID_CHARACTER" },
+      { ".a | foo", "column 6: foo/0 is not defined" },
+      { ".a |\n  $y", "line 2, column 3: $y is not defined" },
+  };
+  eval* e = eval_new();
+
+  eval_set_inputs(e, JV_ARRAY(jv_null()));
+  for (usz i = 0; i < ARRAY_LEN(cases); i++) {
+    eval_result r = { 0 };
+
+    u64 id = eval_submit(e, cases[i][0], 10);
+    if (!eval_wait(e, id, WAIT_MS) || !eval_take(e, &r)) {
+      FAIL("%s: no result", cases[i][0]);
+      continue;
+    }
+
+    CHECK(r.compile_failed);
+    if (jv_get_kind(r.error) != JV_KIND_STRING) {
+      FAIL("%s: no error text", cases[i][0]);
+      eval_result_free(&r);
+      continue;
+    }
+
+    char first[128];
+    snprintf(first, sizeof(first), "%s", jv_string_value(r.error));
+    first[strcspn(first, "\n")] = '\0';
+    ASSERT_STREQ(first, cases[i][1]);
+
+    eval_result_free(&r);
+  }
+
+  eval_free(e);
+}
+
 /* the output that hits the cap is still in the input, which keeps it. */
 static void test_cap_keeps_inputs(void) {
   eval* e = eval_new();
@@ -159,6 +199,7 @@ static void test_cap_keeps_inputs(void) {
    f(test_probe_ignores_debug)  \
    f(test_probe_first_input)    \
    f(test_query_stops_probe)    \
+   f(test_compile_messages)     \
    f(test_cap_keeps_inputs)
 #define TEST_HELPER_MAIN
 
