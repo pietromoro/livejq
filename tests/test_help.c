@@ -10,23 +10,25 @@
 #define H         24
 #define SETTLE_MS 5000
 
-static app* open_app(const char* path);
+static app* open_app(const char* path, const char* folder);
 static void press(app* a, u32 key);
 static b8 shows(app* a, const char* s);
 static void test_help_in_tree(void);
 static void test_help_in_query(void);
 static void test_help_clipped(void);
 static void test_help_scrolls(void);
+static void test_help_saved_keys(void);
 static i32 thumb_at(app* a);
 
 static grid* screen;
 
-static app* open_app(const char* path) {
+static app* open_app(const char* path, const char* folder) {
   app_opts o;
 
   memset(&o, 0, sizeof(o));
   o.path = path;
   o.args = jv_invalid();
+  o.query_folder = folder;
 
   char err[256];
   app* a = app_new(&o, err, sizeof(err));
@@ -59,7 +61,7 @@ static b8 shows(app* a, const char* s) {
 }
 
 static void test_help_in_tree(void) {
-  app* a = open_app("tests/data/sample.json");
+  app* a = open_app("tests/data/sample.json", NULL);
 
   if (!a) return;
 
@@ -83,7 +85,7 @@ static void test_help_in_tree(void) {
 }
 
 static void test_help_in_query(void) {
-  app* a = open_app("tests/data/sample.json");
+  app* a = open_app("tests/data/sample.json", NULL);
 
   if (!a) return;
 
@@ -103,7 +105,7 @@ static void test_help_in_query(void) {
 }
 
 static void test_help_clipped(void) {
-  app* a = open_app("tests/data/sample.json");
+  app* a = open_app("tests/data/sample.json", NULL);
 
   if (!a) return;
 
@@ -134,7 +136,7 @@ static i32 thumb_at(app* a) {
 }
 
 static void test_help_scrolls(void) {
-  app* a = open_app("tests/data/sample.json");
+  app* a = open_app("tests/data/sample.json", NULL);
   app_event wheel = { 0 };
 
   if (!a) return;
@@ -168,11 +170,51 @@ static void test_help_scrolls(void) {
   app_free(a);
 }
 
+static void test_help_saved_keys(void) {
+  app* a = open_app("tests/data/sample.json", "tests/data");
+
+  if (!a) return;
+
+  screen = grid_new(W, H);
+  press(a, APP_KEY_F1);
+  CHECK(shows(a, "query keys"));
+  CHECK(shows(a, "save the query over the loaded one"));
+  CHECK(shows(a, "hide / show the saved queries"));
+  press(a, 'x');
+  press(a, '\t');
+  press(a, '?');
+  CHECK(shows(a, "tree keys"));
+  CHECK(shows(a, "new query, nothing loaded"));
+  press(a, 'x');
+  press(a, '\t');
+  press(a, '?');
+  CHECK(shows(a, "saved query keys"));
+  CHECK(shows(a, "load into the query"));
+  CHECK(shows(a, "save the query under another name"));
+  CHECK(shows(a, "quit"));
+  grid_free(screen);
+  app_free(a);
+
+  a = open_app("tests/data/sample.json", NULL);
+  if (!a) return;
+
+  screen = grid_new(W, H);
+  press(a, APP_KEY_F1);
+  CHECK(!shows(a, "save the query"));
+  press(a, 'x');
+  press(a, '\t');
+  press(a, '?');
+  CHECK(!shows(a, "save the query"));
+  grid_free(screen);
+  app_free(a);
+}
+
 #define TESTS(f)          \
    f(test_help_in_tree)   \
    f(test_help_in_query)  \
    f(test_help_clipped)   \
-   f(test_help_scrolls)
+   f(test_help_scrolls)   \
+   f(test_help_saved_keys)
 
 #define TEST_HELPER_MAIN
 

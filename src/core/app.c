@@ -305,7 +305,7 @@ void app_render(app* a, grid* g) {
 
   if (!a->help) return;
 
-  help_render(g, a->focus, next_focus(a, 1), &a->help_at);
+  help_render(g, a->focus, next_focus(a, 1), a->side.store != NULL, &a->help_at);
   g->cursor_x = -1;
 }
 

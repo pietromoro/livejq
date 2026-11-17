@@ -22,9 +22,10 @@ typedef enum {
 } help_prompt;
 
 /* Draws a box centered over g with the keys of the zone focus, tab leading
- * to the zone next, from row v->top on, scrolled when g is too small for all
- * of them. Clamps v->top and sets v->max and v->page. */
-void help_render(grid* g, app_focus focus, app_focus next, help_view* v);
+ * to the zone next, plus the saved query keys when saved, from row v->top
+ * on, scrolled when g is too small for all of them. Clamps v->top and sets
+ * v->max and v->page. */
+void help_render(grid* g, app_focus focus, app_focus next, b8 saved, help_view* v);
 /* Scrolls v for key: rows, pages and ends. False when key does not scroll. */
 b8 help_key(help_view* v, u32 key);
 /* Scrolls v by n rows. False when it was already at that end. */

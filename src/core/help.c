@@ -9,6 +9,7 @@
 #define MORE_UP   "\xe2\x96\xb2"
 #define MORE_DOWN "\xe2\x96\xbc"
 #define THUMB     "\xe2\x96\x88"
+#define TAIL      3 /* tab, help and quit end every zone's keys */
 
 typedef struct {
   const char* keys;
@@ -58,14 +59,18 @@ static const entry sidebar_keys[] = {
     { "g G  home end", "top / bottom" },
     { "pgup pgdn", "page" },
     { "enter", "load into the query" },
-    { "ctrl-s", "save the query over the loaded one" },
-    { "alt-s", "save the query under another name" },
-    { "ctrl-n", "new query, nothing loaded" },
     { "d", "delete, y confirms" },
-    { "ctrl-b", "hide / show" },
     { "tab", NULL },
     { "? F1", "help" },
     { "q  ctrl-c", "quit" },
+};
+
+/* in every zone with a query folder, before the last TAIL rows. */
+static const entry saved_keys[] = {
+    { "ctrl-s", "save the query over the loaded one" },
+    { "alt-s", "save the query under another name" },
+    { "ctrl-n", "new query, nothing loaded" },
+    { "ctrl-b", "hide / show the saved queries" },
 };
 
 static const entry query_bar[] = {
@@ -133,6 +138,7 @@ static const struct {
 /* by app_focus. */
 static const char* const zone_names[] = { "query", "tree", "saved queries" };
 
+static const entry* key_at(app_focus focus, b8 saved, i32 i);
 static i32 bar(grid* g, i32 x, i32 y, const entry* keys, usz n, app_focus next);
 static i32 bar_width(const entry* keys, usz n);
 static const char* what_of(const entry* e, app_focus next);
@@ -140,9 +146,8 @@ static void scrollbar(grid* g, i32 x, i32 y, const help_view* v, i32 n);
 static i32 key_rows(const help_view* v, u32 key);
 static i32 columns(const char* s);
 
-void help_render(grid* g, app_focus focus, app_focus next, help_view* v) {
-  const entry* keys = zones[focus].keys;
-  i32 n = zones[focus].n;
+void help_render(grid* g, app_focus focus, app_focus next, b8 saved, help_view* v) {
+  i32 n = zones[focus].n + (saved ? (i32)ARRAY_LEN(saved_keys) : 0);
   const char* title = zones[focus].title;
   i32 key_w = 0;
   i32 what_w = columns(SCROLL);
@@ -152,8 +157,10 @@ void help_render(grid* g, app_focus focus, app_focus next, help_view* v) {
   i32 y;
 
   for (i32 i = 0; i < n; i++) {
-    if (columns(keys[i].keys) > key_w) key_w = columns(keys[i].keys);
-    if (columns(what_of(&keys[i], next)) > what_w) what_w = columns(what_of(&keys[i], next));
+    const entry* e = key_at(focus, saved, i);
+
+    if (columns(e->keys) > key_w) key_w = columns(e->keys);
+    if (columns(what_of(e, next)) > what_w) what_w = columns(what_of(e, next));
   }
 
   w = key_w + what_w + 7;
@@ -172,7 +179,7 @@ void help_render(grid* g, app_focus focus, app_focus next, help_view* v) {
   grid_box(g, x, y, w, h, STYLE_BORDER_FOCUS);
   grid_put_fit(g, x + 2, y, x + w - 1, title, strlen(title), STYLE_PILL);
   for (i32 i = 0; i < v->page && v->top + i < n; i++) {
-    const entry* e = &keys[v->top + i];
+    const entry* e = key_at(focus, saved, v->top + i);
     i32 at = x + 2;
 
     grid_put_fit(g, at, y + 1 + i, x + w - 1, e->keys, strlen(e->keys), STYLE_ACCENT);
@@ -224,6 +231,17 @@ i32 help_prompt_bar(grid* g, i32 y, help_prompt p) {
   if (x < g->w / 2) return g->w - 1;
 
   return bar(g, x, y, search_bar, ARRAY_LEN(search_bar), FOCUS_QUERY);
+}
+
+/* row i of focus's keys, saved_keys spliced in before the tail when saved. */
+static const entry* key_at(app_focus focus, b8 saved, i32 i) {
+  i32 body = zones[focus].n - TAIL;
+  i32 extra = saved ? (i32)ARRAY_LEN(saved_keys) : 0;
+
+  if (i < body) return &zones[focus].keys[i];
+  if (i < body + extra) return &saved_keys[i - body];
+
+  return &zones[focus].keys[i - extra];
 }
 
 /* draws keys from x on as many as fit, and returns x. */
