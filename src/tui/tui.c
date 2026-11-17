@@ -14,6 +14,12 @@
 #define TICK_MS    30
 #define CURSOR_BAR 4 /* PDCursesMod's caret, where 1 is an underline */
 
+#ifdef _WIN32
+#  define MARKS_SKIPPED 1
+#else
+#  define MARKS_SKIPPED 0
+#endif
+
 static void init_colors(void);
 static b8 translate(i32 kind, wint_t ch, u32* key);
 static b8 translate_mouse(app_event* ev);
@@ -289,9 +295,11 @@ static void blit(const grid* g) {
       setcchar(&cc, wc, at & ~A_COLOR, (i16)PAIR_NUMBER(at), NULL);
       mvadd_wch(y, x, &cc);
       /* curses cannot draw a mark joined to a wide character: it trips on
-       * the cell the character spills into. those go without. */
+       * the cell the character spills into. those go without, and so do
+       * all of them on windows, where the console gives a mark a cell of
+       * its own and the character is lost. */
       b8 wide = x + 1 < g->w && grid_at(g, x + 1, y).ch == GRID_TAIL;
-      if (!c.marks[0] || wide) continue;
+      if (!c.marks[0] || wide || MARKS_SKIPPED) continue;
 
       for (i32 k = 0; k < GRID_MARKS && c.marks[k]; k++) {
         if (sizeof(wchar_t) < 4 && c.marks[k] > 0xffff) continue;
