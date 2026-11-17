@@ -167,9 +167,9 @@ static void init_colors(void) {
     idle_attrs[s] = style_attrs[s];
   }
 
-  if (!has_colors() || (no_color && *no_color) || COLORS < 16) return;
+  /* the wincon port sets COLORS in start_color. */
+  if (!has_colors() || (no_color && *no_color) || start_color() == ERR || COLORS < 16) return;
 
-  start_color();
   use_default_colors();
   rich = COLORS >= 256;
   line_bg = rich ? 237 : 8;
