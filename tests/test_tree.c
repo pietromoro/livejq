@@ -811,7 +811,7 @@ static void test_single_root_unlabeled(void) {
   ASSERT_STREQ(row(a, 0), OPEN "{3}");
   ASSERT_STREQ(row(a, 3), "  " OPEN "tags: [1]");
   ASSERT_STREQ(row(a, 4), "      0: \"x\"");
-  CHECK(strstr(line(a, H - 2), "1 outputs") != NULL);
+  CHECK(strstr(line(a, H - 2), "1 output ") != NULL);
   app_free(a);
 }
 

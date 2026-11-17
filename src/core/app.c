@@ -1301,11 +1301,14 @@ static void render_status(app* a, grid* g) {
   char outputs[64];
   char time[32];
   if (a->has_result) {
+    i32 n = jv_array_length(jv_copy(a->outputs));
+
     snprintf(
       outputs,
       sizeof(outputs),
-      " %d outputs%s ",
-      jv_array_length(jv_copy(a->outputs)),
+      " %d output%s%s ",
+      n,
+      n == 1 ? "" : "s",
       a->capped ? " (capped)" : ""
     );
     snprintf(time, sizeof(time), " %.1f ms ", (f64)a->elapsed_us / 1000.0);

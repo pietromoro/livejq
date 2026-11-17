@@ -177,7 +177,7 @@ static void test_slurp(void) {
   ASSERT_STREQ(row(a, 0), "\xe2\x96\xbe [2]");
   ASSERT_STREQ(row(a, 1), "    0: \"ok\"");
   ASSERT_STREQ(row(a, 2), "    1: \"second\"");
-  CHECK(strstr(line(a, H - 2), "1 outputs") != NULL);
+  CHECK(strstr(line(a, H - 2), "1 output ") != NULL);
   app_free(a);
 }
 
