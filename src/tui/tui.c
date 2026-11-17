@@ -8,6 +8,7 @@
 
 #include "app.h"
 #include "guard.h"
+#include "term.h"
 #include "thread.h"
 #include "tui.h"
 
@@ -321,14 +322,10 @@ static void blit(const grid* g) {
   refresh();
 }
 
-/* writes the clipboard sequence between frames, and frees it. the windows
- * console has no clipboard escape. */
+/* writes the clipboard sequence between frames, and frees it. */
 static void copy_out(char* osc) {
   if (!osc) return;
 
-#ifndef _WIN32
-  fputs(osc, stdout);
-  fflush(stdout);
-#endif
+  term_write(osc);
   free(osc);
 }
