@@ -724,10 +724,10 @@ static void start_naming(app* a, const char* name) {
   store_failed(a, NULL);
 }
 
-/* drops the loaded query and starts over from . in the box. */
+/* drops the loaded query and starts over from an empty box. */
 static void new_query(app* a) {
   close_completion(a);
-  editor_set(&a->query, ".");
+  editor_set(&a->query, "");
   set_loaded(a, NULL, NULL);
   store_failed(a, NULL);
   a->focus = FOCUS_QUERY;
@@ -1127,9 +1127,12 @@ static b8 edit(editor* e, u32 key) {
   return 1;
 }
 
+/* an empty box runs as ".", which jq refuses to take as nothing. */
 static void submit(app* a) {
+  const char* q = a->query.text ? a->query.text : "";
+
   a->edited = 0;
-  a->pending = eval_submit(a->ev, a->query.text ? a->query.text : "", a->cap);
+  a->pending = eval_submit(a->ev, q[strspn(q, " \t\r\n")] ? q : ".", a->cap);
 }
 
 static b8 apply(app* a) {

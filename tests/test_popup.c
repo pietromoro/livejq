@@ -344,7 +344,7 @@ static void test_ctrl_n_p(void) {
   ASSERT_STREQ(query(a), ".users[0].");
   press(a, ESC);
   press(a, CTRL('n'));
-  ASSERT_STREQ(query(a), ".");
+  ASSERT_STREQ(query(a), "a jq filter");
   app_free(a);
   rmdir(folder);
 }

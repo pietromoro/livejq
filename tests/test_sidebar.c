@@ -734,12 +734,12 @@ static void test_new_query(void) {
   press(a, APP_KEY_ENTER);
   press(a, CTRL('n'));
   CHECK(app_settle(a, SETTLE_MS));
-  ASSERT_STREQ(cells(a, QUERY_X, 1, W - 1), ".");
+  ASSERT_STREQ(cells(a, QUERY_X, 1, W - 1), "a jq filter");
   ASSERT_STREQ(cells(a, 1, 0, 6), "\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80");
   ASSERT_STREQ(cells(a, SIDE_W + 4, TOP, W), "{2}");
   ASSERT_EQ(app_focused(a), FOCUS_QUERY);
 
-  type(a, "b");
+  type(a, ".b");
   press(a, CTRL('s'));
   type(a, "b");
   press(a, APP_KEY_ENTER);
