@@ -1,4 +1,5 @@
 /* tree tests - navigation, folds and state kept by path, through the core. */
+#include <errno.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -721,6 +722,7 @@ static void test_watch_missing_file(void) {
   ASSERT_STREQ(row(a, 1), "    a: true");
   ASSERT_EQ(grid_at(screen, LEFT + 7, TOP + 1).style, STYLE_DIM);
   CHECK(strstr(line(a, H - 2), " MISSING ") == line(a, H - 2));
+  CHECK(strstr(line(a, H - 2), strerror(ENOENT)) != NULL);
   ASSERT_EQ(grid_at(screen, 1, H - 2).style, STYLE_PILL_ERROR);
   CHECK(!tick(a, 2000));
 

@@ -893,7 +893,7 @@ static b8 poll(app* a, i64 now) {
 
     a->missing = 1;
     jv_free(a->load_error);
-    a->load_error = jv_string_fmt("%s: %s", a->path, strerror(errno));
+    a->load_error = jv_string(strerror(errno));
     return 1;
   }
 
