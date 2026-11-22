@@ -50,6 +50,7 @@ typedef struct {
   i32 at;    /* matches before the cursor, -1 until it is passed */
   b8 on;     /* the cursor is on a match */
   i32 want;  /* the match to stop at, -1 for none */
+  b8 cursor; /* stop once at is known */
 } search_pass;
 
 typedef struct {
@@ -97,6 +98,16 @@ struct tree {
   reveal* reveals;
   i32 nreveals;
   i32 reveals_cap;
+
+  /* the last pass's answers, kept while the outputs and the pattern stay,
+   * which epoch counts: the matches, and the cursor's place among them. */
+  u32 epoch;
+  u32 counted; /* the epoch of count, 0 for none */
+  i32 count;
+  u32 placed;  /* the epoch of at and on */
+  char* place; /* the cursor's path they are for */
+  i32 at;
+  b8 on;
 };
 
 static void rebuild(tree* t);
@@ -126,6 +137,12 @@ static node* node_at(tree* t, const char* key);
 static void fold_set(tree* t, const char* key, b8 open);
 static u32 hash(const char* s);
 static void set_pattern(tree* t, const char* pattern);
+static void locate(tree* t, search_pass* p);
+static void keep_place(tree* t, const char* key, i32 at, b8 on);
+static void step_place(tree* t, i32 from, i32 to);
+static b8 row_hit(tree* t, i32 r);
+static i32 folded_matches(tree* t, i32 r);
+static i32 count_matches(tree* t, jv v);
 static b8 pass(tree* t, search_pass* p);
 static b8 pass_value(tree* t, jv value, jv key, i32 depth, search_pass* p);
 static void pass_cursor(tree* t, jv value, b8 hit, search_pass* p);
@@ -154,6 +171,7 @@ tree* tree_new(void) {
 
   t->roots = jv_array();
   t->page = 1;
+  t->epoch = 1;
   return t;
 }
 
@@ -179,6 +197,7 @@ void tree_free(tree* t) {
   free(t->search);
   free(t->origin);
   free(t->was);
+  free(t->place);
   free(t);
 }
 
@@ -187,12 +206,14 @@ void tree_set(tree* t, jv outputs) {
   jv_free(t->roots);
   t->roots = outputs;
   t->nroots = jv_array_length(jv_copy(outputs));
+  t->epoch++;
   t->mode = pick_mode(t);
   rebuild(t);
 }
 
 void tree_do(tree* t, tree_op op) {
   i32 last = t->nrows - 1;
+  i32 from = t->cursor;
 
   if (t->nrows == 0) return;
 
@@ -253,6 +274,8 @@ void tree_do(tree* t, tree_op op) {
   if (t->cursor < 0) t->cursor = 0;
   if (t->cursor > t->nrows - 1) t->cursor = t->nrows - 1;
   if (t->top < 0) t->top = 0;
+
+  if (op == TREE_UP || op == TREE_DOWN) step_place(t, from, t->cursor);
 
   remember_cursor(t);
 }
@@ -409,27 +432,28 @@ void tree_search_end(tree* t, b8 back) {
 b8 tree_find(tree* t, i32 step) {
   if (!t->search) return 0;
 
-  search_pass p = { .want = -1 };
-  pass(t, &p);
+  search_pass p;
+  locate(t, &p);
   if (p.count == 0) return 0;
 
   i32 at = step > 0 ? p.at + p.on : step < 0 ? p.at - 1 : p.at;
-  p.want = (at + p.count) % p.count;
+  i32 want = (at + p.count) % p.count;
+  p = (search_pass){ .want = want };
   pass(t, &p);
   go_to(t, dup(t->key.s));
+  keep_place(t, t->cursor_key, want, 1);
   return 1;
 }
 
 const char* tree_pattern(const tree* t) { return t->search; }
 
 void tree_matches(tree* t, i32* at, i32* total) {
-  search_pass p = { .want = -1 };
-
   *at = 0;
   *total = 0;
   if (!t->search) return;
 
-  pass(t, &p);
+  search_pass p;
+  locate(t, &p);
   *at = p.on ? p.at + 1 : 0;
   *total = p.count;
 }
@@ -851,13 +875,100 @@ static void set_pattern(tree* t, const char* pattern) {
 
   free(t->search);
   t->search = s;
+  t->epoch++;
   t->fold_case = 1;
   for (; s && *s; s++)
     if (*s >= 'A' && *s <= 'Z') t->fold_case = 0;
 }
 
+/* the matches and the cursor's place among them into p, passing over the
+ * values only for what changed: up to the cursor once they are counted. */
+static void locate(tree* t, search_pass* p) {
+  const char* cursor = t->cursor_key ? t->cursor_key : "";
+  b8 counted = t->counted == t->epoch;
+
+  if (counted && t->placed == t->epoch && strcmp(t->place, cursor) == 0) {
+    *p = (search_pass){ .count = t->count, .at = t->at, .on = t->on, .want = -1 };
+    return;
+  }
+
+  *p = (search_pass){ .want = -1, .cursor = counted };
+  pass(t, p);
+  if (!counted) {
+    t->count = p->count;
+    t->counted = t->epoch;
+  }
+
+  p->count = t->count;
+  keep_place(t, cursor, p->at, p->on);
+}
+
+static void keep_place(tree* t, const char* key, i32 at, b8 on) {
+  char* copy = dup(key ? key : "");
+
+  free(t->place);
+  t->place = copy;
+  t->placed = t->epoch;
+  t->at = at;
+  t->on = on;
+}
+
+/* the place of line to from that of the line next to it, from, when it is
+ * known: lines follow the values' order, so only from's own match and the
+ * ones folded under it lie between them. */
+static void step_place(tree* t, i32 from, i32 to) {
+  if (!t->search || t->counted != t->epoch || t->placed != t->epoch) return;
+
+  row_key(t, from);
+  if (strcmp(t->place, t->key.s) != 0) return;
+
+  i32 at = t->at;
+  if (to == from + 1) at += t->on + folded_matches(t, from);
+  else if (to == from - 1) at -= row_hit(t, to) + folded_matches(t, to);
+  else return;
+
+  row_key(t, to);
+  keep_place(t, t->key.s, at, row_hit(t, to));
+}
+
+/* whether line r is a match, as a pass counts them: lines a view derived
+ * are never searched. */
+static b8 row_hit(tree* t, i32 r) {
+  return !derived_row(t, r) && matches(t, t->rows[r].value, t->rows[r].key);
+}
+
+/* the matches under line r that show no line of their own. */
+static i32 folded_matches(tree* t, i32 r) {
+  const row* w = &t->rows[r];
+
+  if (derived_row(t, r) || jv_is_valid(w->derived) || w->open) return 0;
+
+  return count_matches(t, w->value);
+}
+
+/* the matches among the borrowed v's members and theirs. */
+static i32 count_matches(tree* t, jv v) {
+  i32 n = 0;
+
+  if (jv_get_kind(v) == JV_KIND_ARRAY) {
+    jv_array_foreach(v, i, item) {
+      n += matches(t, item, jv_number(i)) + count_matches(t, item);
+      jv_free(item);
+    }
+  } else if (jv_get_kind(v) == JV_KIND_OBJECT) {
+    jv_object_foreach(v, k, item) {
+      n += matches(t, item, k) + count_matches(t, item);
+      jv_free(k);
+      jv_free(item);
+    }
+  }
+
+  return n;
+}
+
 /* counts the matches, and where the cursor is among them, or stops at match
- * p->want with its path in t->key. */
+ * p->want with its path in t->key, or with p->cursor once the cursor is
+ * placed. */
 static b8 pass(tree* t, search_pass* p) {
   p->count = 0;
   p->at = -1;
@@ -885,7 +996,7 @@ static b8 pass_value(tree* t, jv value, jv key, i32 depth, search_pass* p) {
   b8 hit = matches(t, value, key);
   pass_cursor(t, value, hit, p);
   jv_free(key);
-  if (hit && p->count++ == p->want) {
+  if ((hit && p->count++ == p->want) || (p->cursor && p->at >= 0)) {
     jv_free(value);
     return 1;
   }

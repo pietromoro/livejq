@@ -49,6 +49,7 @@ static void test_focus(void);
 static void test_long_string(void);
 static void test_detail(void);
 static void test_cut_needs_rows(void);
+static void test_search_steps(void);
 static void test_click_focuses(void);
 static void test_click_picks_lines(void);
 static void test_wheel_scrolls(void);
@@ -1468,6 +1469,58 @@ static void test_cut_needs_rows(void) {
   tree_free(t);
 }
 
+/* stepping a line at a time keeps the cursor's place among the matches as
+ * a pass over the values finds it: past folded members, a view's lines and
+ * the roots. */
+static void test_search_steps(void) {
+  const char* data = "{\"a\": \"xa\", \"b\": [\"ax\", 1, {\"c\": \"a\", \"d\": [\"a\"]}], \"q\": \"a=1&ab=2\"}";
+  tree* walk = tree_new();
+  tree* jump = tree_new();
+  grid* g = grid_new(W, 60);
+  tree* both[] = { walk, jump };
+
+  for (i32 k = 0; k < 2; k++) {
+    tree_set(both[k], JV_ARRAY(jv_parse(data), jv_string("aaa"), jv_parse("[{\"a\": 1}]")));
+    for (i32 i = 0; i < 5; i++) tree_do(both[k], TREE_DOWN);
+
+    tree_do(both[k], TREE_FOLD);
+    tree_do(both[k], TREE_DOWN);
+
+    tree_view(both[k], (view_id[]){ VIEW_QUERY }, 1);
+    tree_search(both[k], "a");
+    tree_do(both[k], TREE_TOP);
+    tree_render(both[k], g, LEFT, 0, W, 60, 0, 1);
+  }
+
+  for (i32 step = 1; step >= -1; step -= 2) {
+    for (i32 i = 0; i < 16; i++) {
+      i32 at;
+      i32 total;
+      i32 want_at;
+      i32 want_total;
+
+      tree_matches(walk, &at, &total);
+      for (i32 n = 0; n < 60 && tree_click(jump, W, n, 0); n++) {
+        char a[256];
+        tree_path(walk, a, sizeof(a));
+
+        char b[256];
+        tree_path(jump, b, sizeof(b));
+        if (strcmp(a, b) == 0) break;
+      }
+
+      tree_matches(jump, &want_at, &want_total);
+      ASSERT_EQ(at, want_at);
+      ASSERT_EQ(total, want_total);
+      tree_do(walk, step > 0 ? TREE_DOWN : TREE_UP);
+    }
+  }
+
+  grid_free(g);
+  tree_free(walk);
+  tree_free(jump);
+}
+
 #define TESTS(f)                          \
    f(test_focus)                          \
    f(test_click_focuses)                  \
@@ -1504,6 +1557,7 @@ static void test_cut_needs_rows(void) {
    f(test_long_string)                    \
    f(test_detail)                         \
    f(test_cut_needs_rows)                 \
+   f(test_search_steps)                   \
    f(test_search_marks)                   \
    f(test_copy_value)                     \
    f(test_copy_path)                      \
