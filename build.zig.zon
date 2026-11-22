@@ -1,6 +1,6 @@
 .{
   .name = .livejq,
-  .version = "0.0.0",
+  .version = "0.1.0",
   .fingerprint = 0xe28e4fb27d865710,
   .minimum_zig_version = "0.17.0",
   .dependencies = .{},
