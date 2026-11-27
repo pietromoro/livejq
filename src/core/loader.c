@@ -12,24 +12,35 @@
 #define CHUNK      ((usz)1 << 30)
 #define MAX_STRING ((usz)INT32_MAX)
 
+static void stamp_of(const struct stat* st, file_stamp* out);
 static char* read_all(const char* path, usz* len);
 static load_result parse_json(const char* buf, usz len, b8 slurp);
 static load_result split_lines(const char* buf, usz len, b8 slurp);
 
 b8 file_stat(const char* path, file_stamp* out) {
   struct stat st;
-
   if (stat(path, &st) != 0) return 0;
-
-  out->size = (i64)st.st_size;
-#if defined(__APPLE__)
-  out->mtime_ns = (i64)st.st_mtimespec.tv_sec * 1000000000 + st.st_mtimespec.tv_nsec;
-#elif defined(_WIN32)
-  out->mtime_ns = (i64)st.st_mtime * 1000000000;
-#else
-  out->mtime_ns = (i64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
-#endif
+  stamp_of(&st, out);
   return 1;
+}
+
+b8 file_stat_regular(const char* path, file_stamp* out) {
+  struct stat st;
+  if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) return 0;
+  stamp_of(&st, out);
+  return 1;
+}
+
+static void stamp_of(const struct stat* st, file_stamp* out) {
+  out->size = (i64)st->st_size;
+
+#if defined(__APPLE__)
+  out->mtime_ns = (i64)st->st_mtimespec.tv_sec * 1000000000 + st->st_mtimespec.tv_nsec;
+#elif defined(_WIN32)
+  out->mtime_ns = (i64)st->st_mtime * 1000000000;
+#else
+  out->mtime_ns = (i64)st->st_mtim.tv_sec * 1000000000 + st->st_mtim.tv_nsec;
+#endif
 }
 
 b8 load_file(

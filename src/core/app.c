@@ -1,11 +1,12 @@
 /* app - application state driven by events, rendered into a grid. */
+#include "app.h"
+
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "app.h"
 #include "clip.h"
 #include "complete.h"
 #include "detail.h"
@@ -13,6 +14,7 @@
 #include "eval.h"
 #include "help.h"
 #include "highlight.h"
+#include "latest.h"
 #include "loader.h"
 #include "popup.h"
 #include "sidebar.h"
@@ -42,8 +44,12 @@
 #define H_LINE      "\xe2\x94\x80"
 
 struct app {
-  const char* path;
-  const char* name;
+  char* path;         /* the file read, owned */
+  const char* name;   /* its last part */
+  const char* dir;    /* with latest, the folder followed */
+  const char* latest; /* the pattern its files are matched with, or NULL */
+  char* tried;        /* a newer match that did not parse, NULL for none */
+  file_stamp tried_stamp;
   b8 raw;
   b8 slurp;
   usz cap;
@@ -126,7 +132,11 @@ static void set_loaded(app* a, const char* name, char* text);
 static void store_failed(app* a, const char* err);
 static b8 mouse(app* a, app_event ev);
 static b8 poll(app* a, i64 now);
+static b8 gone(app* a, const char* why);
+static b8 follow(app* a);
 static void reload(app* a);
+static b8 load(app* a, char* next, b8 grace);
+static void set_path(app* a, char* path);
 static void hand_inputs(app* a, jv inputs);
 static b8 completion_key(app* a, app_event ev);
 static void open_completion(app* a);
@@ -164,7 +174,13 @@ app* app_new(const app_opts* opts, char* err, usz errlen) {
     return NULL;
   }
 
-  if (!load_file(opts->path, opts->raw, opts->slurp, &loaded, &stamp, err, errlen)) {
+  char* path = opts->latest
+    ? latest_find(opts->path, opts->latest, &stamp, err, errlen)
+    : strdup(opts->path);
+
+  if (!opts->latest && !path) abort();
+  if (!path || !load_file(path, opts->raw, opts->slurp, &loaded, &stamp, err, errlen)) {
+    free(path);
     store_free(saved);
     jv_free(opts->args);
     return NULL;
@@ -178,12 +194,9 @@ app* app_new(const app_opts* opts, char* err, usz errlen) {
   a->side.store = saved;
   a->side.shown = saved != NULL;
 
-  const char* slash = strrchr(opts->path, '/');
-#ifdef _WIN32
-  if (strrchr(opts->path, '\\') > slash) slash = strrchr(opts->path, '\\');
-#endif
-  a->path = opts->path;
-  a->name = slash ? slash + 1 : opts->path;
+  set_path(a, path);
+  a->dir = opts->path;
+  a->latest = opts->latest;
   a->raw = opts->raw;
   a->slurp = opts->slurp;
   a->cap = opts->cap ? opts->cap : DEFAULT_CAP;
@@ -230,6 +243,8 @@ void app_free(app* a) {
   free(a->loaded);
   free(a->loaded_text);
   free(a->clip);
+  free(a->path);
+  free(a->tried);
   free(a);
 }
 
@@ -888,15 +903,8 @@ static b8 poll(app* a, i64 now) {
   a->poll_at = now + a->watch_ms;
   if (first) return 0;
 
-  if (!file_stat(a->path, &st)) {
-    if (a->missing) return 0;
-
-    a->missing = 1;
-    jv_free(a->load_error);
-    a->load_error = jv_string(strerror(errno));
-    return 1;
-  }
-
+  if (a->latest) return follow(a);
+  if (!file_stat(a->path, &st)) return gone(a, strerror(errno));
   if (!a->missing && st.mtime_ns == a->stamp.mtime_ns && st.size == a->stamp.size) return 0;
 
   a->missing = 0;
@@ -904,30 +912,102 @@ static b8 poll(app* a, i64 now) {
   return 1;
 }
 
-/* a file that cannot be read or parsed keeps the last data, with the
- * reason shown. */
-static void reload(app* a) {
+/* the last data stays, with why it is missing. True the first time. */
+static b8 gone(app* a, const char* why) {
+  if (a->missing) return 0;
+
+  a->missing = 1;
+  jv_free(a->load_error);
+  a->load_error = jv_string(why);
+  return 1;
+}
+
+/* moves to the newest file the pattern matches, or reads the same one again
+ * when it changed. Its writer may not be done with a newer file, so one that
+ * does not parse gets a look of grace: the last data stays until it parses,
+ * or until a look finds it the same and still broken. */
+static b8 follow(app* a) {
+  file_stamp st;
+  char err[256];
+  char* newest = latest_find(a->dir, a->latest, &st, err, sizeof(err));
+
+  if (!newest) return gone(a, err);
+  if (strcmp(newest, a->path) == 0) {
+    free(newest);
+    if (!a->missing && st.mtime_ns == a->stamp.mtime_ns && st.size == a->stamp.size) return 0;
+
+    a->missing = 0;
+    reload(a);
+    return 1;
+  }
+
+  b8 retried = a->tried && strcmp(newest, a->tried) == 0 && st.mtime_ns == a->tried_stamp.mtime_ns && st.size == a->tried_stamp.size;
+  if (!load(a, newest, !retried)) {
+    free(a->tried);
+    a->tried = newest;
+    a->tried_stamp = st;
+    return 0;
+  }
+
+  a->missing = 0;
+  return 1;
+}
+
+static void reload(app* a) { load(a, NULL, 0); }
+
+/* reads the file again, or moves to next, taking it. A file that cannot be
+ * read or parsed keeps the last data, with the reason shown; with grace it
+ * is left alone instead: nothing changes, next stays the caller's and false
+ * comes back. */
+static b8 load(app* a, char* next, b8 grace) {
   load_result loaded;
   file_stamp stamp;
-
-  jv_free(a->load_error);
-
   char err[256];
-  if (!load_file(a->path, a->raw, a->slurp, &loaded, &stamp, err, sizeof(err))) {
+
+  b8 read = load_file(next ? next : a->path, a->raw, a->slurp, &loaded, &stamp, err, sizeof(err));
+  b8 parsed = read && jv_get_kind(loaded.error) != JV_KIND_STRING;
+  if (!parsed && grace) {
+    if (read) {
+      jv_free(loaded.inputs);
+      jv_free(loaded.error);
+    }
+
+    return 0;
+  }
+
+  if (next) set_path(a, next);
+  free(a->tried);
+  a->tried = NULL;
+  jv_free(a->load_error);
+  if (!read) {
     a->load_error = jv_string(err);
-    return;
+    return 1;
   }
 
   a->stamp = stamp;
   a->load_error = loaded.error;
-  if (jv_get_kind(loaded.error) == JV_KIND_STRING) {
+  if (!parsed) {
     jv_free(loaded.inputs);
-    return;
+    return 1;
   }
 
   a->loaded_ms = a->wall_ms;
   hand_inputs(a, loaded.inputs);
   submit(a);
+  return 1;
+}
+
+/* takes path, and the name the status bar shows from it. */
+static void set_path(app* a, char* path) {
+  const char* slash = strrchr(path, '/');
+
+#ifdef _WIN32
+  if (strrchr(path, '\\') > slash) slash = strrchr(path, '\\');
+#endif
+
+  free(a->path);
+  a->path = path;
+  a->name = slash ? slash + 1 : path;
 }
 
 /* the next probe runs again over the new inputs. */

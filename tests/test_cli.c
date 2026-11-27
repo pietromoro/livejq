@@ -15,6 +15,7 @@ static void test_help_and_version(void);
 static void test_query(void);
 static void test_input_modes(void);
 static void test_watch(void);
+static void test_latest(void);
 static void test_watch_malformed(void);
 static void test_args(void);
 static void test_argjson_malformed(void);
@@ -129,6 +130,37 @@ static void test_watch(void) {
   jv_free(o.app.args);
 }
 
+static void test_latest(void) {
+  cli_opts o;
+
+  ASSERT_EQ(parse(&o, "--latest", "*.save", "store-archive", NULL), CLI_RUN);
+  CHECK(strcmp(o.app.latest, "*.save") == 0);
+  CHECK(strcmp(o.app.path, "store-archive") == 0);
+  ASSERT_EQ(o.app.watch_ms, 1000);
+  jv_free(o.app.args);
+
+  ASSERT_EQ(parse(&o, "-w", "0.2", "-l", "*.save", "dir", NULL), CLI_RUN);
+  ASSERT_EQ(o.app.watch_ms, 200);
+  jv_free(o.app.args);
+
+  ASSERT_EQ(parse(&o, "dir", "-l", "*.save", "--watch", "3", NULL), CLI_RUN);
+  ASSERT_EQ(o.app.watch_ms, 3000);
+  jv_free(o.app.args);
+
+  ASSERT_EQ(parse(&o, "data.json", NULL), CLI_RUN);
+  CHECK(o.app.latest == NULL);
+  jv_free(o.app.args);
+
+  ASSERT_EQ(parse(&o, "--latest", "*.save", NULL), CLI_USAGE);
+  CHECK(strstr(err, "no folder") != NULL);
+  ASSERT_EQ(parse(&o, "dir", "--latest", NULL), CLI_USAGE);
+  CHECK(strstr(err, "--latest needs a value") != NULL);
+  ASSERT_EQ(parse(&o, "--latest", "sub/*.save", "dir", NULL), CLI_USAGE);
+  CHECK(strstr(err, "sub/*.save") != NULL);
+  ASSERT_EQ(parse(&o, "--latest", "a\\b", "dir", NULL), CLI_USAGE);
+  ASSERT_EQ(parse(&o, "--latest", "", "dir", NULL), CLI_USAGE);
+}
+
 static void test_watch_malformed(void) {
   cli_opts o;
 
@@ -197,6 +229,7 @@ static void test_short_forms(void) {
    f(test_query)              \
    f(test_input_modes)        \
    f(test_watch)              \
+   f(test_latest)             \
    f(test_watch_malformed)    \
    f(test_args)               \
    f(test_argjson_malformed)  \

@@ -13,11 +13,13 @@ static b8 is(const char* s, const char* full, const char* abbr);
 static b8 option(i32 argc, char** argv, i32* i, cli_opts* opts, char* err, usz errlen);
 static const char* value(i32 argc, char** argv, i32* i, char* err, usz errlen);
 static b8 watch(i32 argc, char** argv, i32* i, cli_opts* opts, char* err, usz errlen);
+static b8 latest(i32 argc, char** argv, i32* i, cli_opts* opts, char* err, usz errlen);
 static b8 bind_arg(i32 argc, char** argv, i32* i, cli_opts* opts, char* err, usz errlen);
 static cli_action drop_args(cli_opts* opts, cli_action action);
 
 const char cli_usage[] =
   "usage: livejq [options] <file>\n"
+  "       livejq [options] --latest PATTERN <folder>\n"
   "\n"
   "Runs a jq query live over a JSON file.\n"
   "\n"
@@ -25,6 +27,9 @@ const char cli_usage[] =
   "  -q, --query TEXT         start with this query instead of .\n"
   "  -w, --watch [SECS]       reload the file when it changes, checked every\n"
   "                           SECS seconds (default 1, fractions allowed)\n"
+  "  -l, --latest PATTERN     take a folder instead of a file and follow its\n"
+  "                           newest file named like PATTERN (* and ?\n"
+  "                           wildcards), watching it as --watch does\n"
   "  -d, --query-folder PATH  list the .query files in PATH as saved queries\n"
   "  -s, --slurp              read all inputs into one array\n"
   "  -R, --raw-input          read each line of the file as a string\n"
@@ -75,10 +80,11 @@ cli_action cli_parse(i32 argc, char** argv, cli_opts* opts, char* err, usz errle
   }
 
   if (!opts->app.path) {
-    snprintf(err, errlen, "no file given");
+    snprintf(err, errlen, opts->app.latest ? "no folder given" : "no file given");
     return drop_args(opts, CLI_USAGE);
   }
 
+  if (opts->app.latest && !opts->app.watch_ms) opts->app.watch_ms = DEFAULT_WATCH_MS;
   return CLI_RUN;
 }
 
@@ -102,6 +108,7 @@ static b8 option(i32 argc, char** argv, i32* i, cli_opts* opts, char* err, usz e
   if (is(s, "--query", "-q")) return (opts->app.query = value(argc, argv, i, err, errlen)) != NULL;
   if (is(s, "--query-folder", "-d"))
     return (opts->app.query_folder = value(argc, argv, i, err, errlen)) != NULL;
+  if (is(s, "--latest", "-l")) return latest(argc, argv, i, opts, err, errlen);
   if (is(s, "--watch", "-w")) return watch(argc, argv, i, opts, err, errlen);
   if (
     strcmp(s, "--arg") == 0
@@ -144,6 +151,20 @@ static b8 watch(i32 argc, char** argv, i32* i, cli_opts* opts, char* err, usz er
   }
 
   opts->app.watch_ms = (i64)(secs * 1000 + 0.5);
+  return 1;
+}
+
+/* The pattern matches names inside the folder, so it cannot hold a path. */
+static b8 latest(i32 argc, char** argv, i32* i, cli_opts* opts, char* err, usz errlen) {
+  const char* pattern = value(argc, argv, i, err, errlen);
+
+  if (!pattern) return 0;
+  if (pattern[0] == '\0' || strpbrk(pattern, "/\\")) {
+    snprintf(err, errlen, "--latest: '%s' is not a file name pattern", pattern);
+    return 0;
+  }
+
+  opts->app.latest = pattern;
   return 1;
 }
 

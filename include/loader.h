@@ -18,6 +18,9 @@ typedef struct {
 
 b8 file_stat(const char* path, file_stamp* out);
 
+/* As file_stat, but false too when path is not a regular file. */
+b8 file_stat_regular(const char* path, file_stamp* out);
+
 /* False when the file cannot be read, with the reason in err. */
 b8 load_file(
   const char* path, b8 raw, b8 slurp, load_result* out, file_stamp* stamp, char* err, usz errlen

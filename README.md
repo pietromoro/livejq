@@ -10,6 +10,7 @@ livejq data.json
 livejq --query '.[] | select(.level == "error")' --watch app.json
 livejq --raw-input --slurp notes.txt
 livejq --query-folder queries/ data.json
+livejq --latest '*.save' store-archive/
 ```
 
 Type a jq filter in the box at the top: the outputs follow as you type, as a tree you can fold,
@@ -22,12 +23,19 @@ outside the query, lists every key of the focused zone.
 -q, --query TEXT         start with this query instead of .
 -w, --watch [SECS]       reload the file when it changes, checked every
                          SECS seconds (default 1, fractions allowed)
+-l, --latest PATTERN     take a folder instead of a file and follow its
+                         newest file named like PATTERN (* and ?
+                         wildcards), watching it as --watch does
 -d, --query-folder PATH  list the .query files in PATH as saved queries
 -s, --slurp              read all inputs into one array
 -R, --raw-input          read each line of the file as a string
     --arg NAME VALUE     bind $NAME to the string VALUE
     --argjson NAME JSON  bind $NAME to the JSON value
 ```
+
+With `--latest`, the status bar names the file being shown. A newer file that does not parse
+yet, because its writer is not done, keeps the last data on screen until it does; one that is
+still broken and unchanged at the next look is shown with its error.
 
 ### Keys
 

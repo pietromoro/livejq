@@ -58,8 +58,9 @@ typedef struct {
 } app_event;
 
 typedef struct {
-  const char* path;
-  const char* query; /* default "." */
+  const char* path;   /* the file, or with latest the folder */
+  const char* latest; /* a name pattern: the newest match in path is read */
+  const char* query;  /* default "." */
   b8 raw;
   b8 slurp;
   jv args;                  /* object of $name bindings, owned by the app */
